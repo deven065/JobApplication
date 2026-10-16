@@ -58,9 +58,12 @@ public class GitHubPortfolioService {
                 String content = new String(Base64.getMimeDecoder().decode(raw), StandardCharsets.UTF_8);
                 scanned++;
                 for (Skill skill : SkillMatcher.skillsIn(content)) {
-                    String snippet = content.lines().filter(l -> SkillMatcher.skillsIn(l).contains(skill)).findFirst().orElse("").trim();
-                    String url = "https://github.com/" + repository + "/blob/" + sha + "/" + path;
-                    found.computeIfAbsent(skill, k -> new ArrayList<>()).add(new Evidence(skill, path, url, SkillMatcher.reason(skill), snippet));
+                    List<String> lines = content.lines().toList();
+                    int match = 0;
+                    while (match < lines.size() && !SkillMatcher.skillsIn(lines.get(match)).contains(skill)) match++;
+                    String snippet = match < lines.size() ? lines.get(match).trim() : "";
+                    String url = "https://github.com/" + repository + "/blob/" + sha + "/" + path + (match < lines.size() ? "#L" + (match + 1) : "");
+                    found.computeIfAbsent(skill, k -> new ArrayList<>()).add(new Evidence(skill, path, url, SkillMatcher.reason(skill), snippet, excerpt(lines, match)));
                 }
             } catch (Exception ignored) { skipped++; /* Binary/too-large/inaccessible files are not evidence. */ }
         }
@@ -90,6 +93,14 @@ public class GitHubPortfolioService {
     private JsonNode json(String body) {
         try { return JSON.readTree(body); }
         catch (Exception exception) { throw new IllegalStateException("GitHub returned invalid JSON", exception); }
+    }
+    /** Numbered lines around the first match, so a reviewer sees the code and not only the keyword. */
+    private String excerpt(List<String> lines, int match) {
+        int start = Math.max(0, Math.min(match, lines.size()) - 8);
+        int end = Math.min(lines.size(), start + 40);
+        StringBuilder out = new StringBuilder();
+        for (int i = start; i < end && out.length() < 1800; i++) out.append(i + 1).append(": ").append(lines.get(i)).append('\n');
+        return out.toString();
     }
     private boolean isRelevant(String p) { return p.matches("(?i).*(\\.java|\\.sql|\\.js|\\.jsx|\\.ts|\\.tsx|\\.yml|\\.yaml|dockerfile|pom\\.xml|build\\.gradle)$"); }
 }

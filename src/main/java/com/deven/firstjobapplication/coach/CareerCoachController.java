@@ -16,13 +16,23 @@ public class CareerCoachController {
     private final AssessmentService assessments;
     private final GitHubPortfolioService github;
     private final StateStore store;
+    private final AiCoach coach;
     private final Map<String, JobRequirement> savedJobs;
     public CareerCoachController(JobDiscoveryService jobs, AssessmentService assessments, GitHubPortfolioService github, StateStore store) {
-        this.jobs = jobs; this.assessments = assessments; this.github = github; this.store = store;
+        this(jobs, assessments, github, store, AiCoach.disabled());
+    }
+    @org.springframework.beans.factory.annotation.Autowired
+    public CareerCoachController(JobDiscoveryService jobs, AssessmentService assessments, GitHubPortfolioService github, StateStore store, AiCoach coach) {
+        this.jobs = jobs; this.assessments = assessments; this.github = github; this.store = store; this.coach = coach;
         savedJobs = new java.util.concurrent.ConcurrentHashMap<>(store.jobs());
         savedJobs.put("demo-backend", jobs.demoJob());
     }
 
+    @GetMapping("/ai/status") public AiStatus aiStatus() {
+        return coach.enabled()
+                ? new AiStatus(true, coach.provider(), coach.model(), "The AI reads job postings and reviews repository evidence.")
+                : new AiStatus(false, "none", "", "AI review is off. Set GROQ_API_KEY or GEMINI_API_KEY (both free) and restart the backend. Keyword rules are used meanwhile.");
+    }
     @GetMapping("/jobs/demo") public JobRequirement demoJob() { return savedJobs.get("demo-backend"); }
     @GetMapping("/jobs") public List<JobRequirement> savedJobs() {
         return savedJobs.values().stream().filter(job -> !job.id().equals("demo-backend"))
@@ -34,8 +44,11 @@ public class CareerCoachController {
     @PutMapping("/jobs/{id}/requirements") public JobRequirement updateRequirements(@PathVariable String id, @RequestBody RequirementsUpdate body) {
         JobRequirement existing = Optional.ofNullable(savedJobs.get(id)).orElseThrow(() -> new NoSuchElementException("Unknown job id"));
         if (body.skills() == null || body.skills().isEmpty()) throw new IllegalArgumentException("Select at least one requirement.");
+        List<Skill> skills = body.skills().stream().distinct().toList();
+        List<RequirementQuote> quotes = Optional.ofNullable(existing.requirementQuotes()).orElse(List.of()).stream()
+                .filter(quote -> skills.contains(quote.skill())).toList();
         JobRequirement updated = new JobRequirement(existing.id(), existing.title(), existing.company(), existing.sourceUrl(),
-                existing.sourceExcerpt(), body.skills().stream().distinct().toList(), existing.fetchedAt());
+                existing.sourceExcerpt(), skills, existing.fetchedAt(), quotes, existing.extractedBy());
         if (!id.equals("demo-backend")) store.saveJob(updated);
         assessments.invalidateJob(id);
         savedJobs.put(id, updated);

@@ -1,6 +1,10 @@
 package com.deven.firstjobapplication.coach;
 
 import com.deven.firstjobapplication.coach.Models.JobRequirement;
+import com.deven.firstjobapplication.coach.Models.RequirementQuote;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import java.net.InetAddress;
 import java.net.URI;
@@ -14,8 +18,13 @@ import java.util.*;
 /** Fetches the source page at assessment time; the page URL and extract remain traceable. */
 @Service
 public class JobDiscoveryService {
+    private static final Logger log = LoggerFactory.getLogger(JobDiscoveryService.class);
+    private final AiCoach coach;
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5))
             .followRedirects(HttpClient.Redirect.NEVER).build();
+
+    @Autowired public JobDiscoveryService(AiCoach coach) { this.coach = coach; }
+    public JobDiscoveryService() { this(AiCoach.disabled()); }
 
     public JobRequirement discover(String title, String company, String sourceUrl, String pastedText) {
         if (title == null || title.isBlank() || company == null || company.isBlank())
@@ -31,8 +40,16 @@ public class JobDiscoveryService {
         String text = html.replaceAll("(?is)<script.*?</script>|<style.*?</style>|<[^>]+>", " ")
                 .replaceAll("\\s+", " ").trim();
         if (text.isBlank()) throw new IllegalArgumentException("No readable job text was found. Paste the posting text and try again.");
-        List<Skill> skills = SkillMatcher.skillsIn(text);
         String excerpt = text.length() > 900 ? text.substring(0, 900) + "..." : text;
+        if (coach.enabled()) {
+            try {
+                List<RequirementQuote> quotes = coach.extractRequirements(title, text);
+                if (!quotes.isEmpty())
+                    return new JobRequirement(UUID.randomUUID().toString(), title, company, sourceUrl, excerpt,
+                            quotes.stream().map(RequirementQuote::skill).toList(), Instant.now(), quotes, coach.label());
+            } catch (Exception error) { log.warn("AI requirement extraction failed; using keyword rules", error); }
+        }
+        List<Skill> skills = SkillMatcher.skillsIn(text);
         return new JobRequirement(UUID.randomUUID().toString(), title, company, sourceUrl, excerpt, skills, Instant.now());
     }
 

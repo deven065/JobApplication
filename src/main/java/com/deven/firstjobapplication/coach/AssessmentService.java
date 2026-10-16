@@ -1,20 +1,27 @@
 package com.deven.firstjobapplication.coach;
 
 import com.deven.firstjobapplication.coach.Models.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class AssessmentService {
+    private static final Logger log = LoggerFactory.getLogger(AssessmentService.class);
     private final GitHubPortfolioService github;
+    private final AiCoach coach;
     private final StateStore store;
     private final Map<String, RepoRegistration> watched = new ConcurrentHashMap<>();
     private final Map<String, PortfolioScan> scans = new ConcurrentHashMap<>();
     private final Map<String, Assessment> latestAssessments = new ConcurrentHashMap<>();
     private final Map<String, AssessmentSubscription> subscriptions = new ConcurrentHashMap<>();
-    public AssessmentService(GitHubPortfolioService github, StateStore store) {
+    public AssessmentService(GitHubPortfolioService github, StateStore store) { this(github, store, AiCoach.disabled()); }
+    @Autowired public AssessmentService(GitHubPortfolioService github, StateStore store, AiCoach coach) {
         this.github = github;
+        this.coach = coach;
         this.store = store;
         for (RepoRegistration watch : store.watches()) watched.put(repoKey(watch.repository()), watch);
         for (StateStore.SavedAssessment saved : store.assessments()) {
@@ -41,13 +48,48 @@ public class AssessmentService {
         return assessment;
     }
     private Assessment buildAssessment(JobRequirement job, PortfolioScan scan) {
-        List<Gap> gaps = job.requiredSkills().stream().map(skill -> {
+        List<Gap> rules = job.requiredSkills().stream().map(skill -> {
             List<Evidence> evidence = scan.evidence().getOrDefault(skill, List.of());
             if (evidence.isEmpty()) return new Gap(skill, "NOT_DEMONSTRATED",
                     "No matching evidence was found in the scanned files. This is not proof you lack " + skill.label() + "; it only describes this repository at this revision.", evidence);
             return new Gap(skill, "DEMONSTRATED", "Evidence found in this repository revision.", evidence);
         }).toList();
-        return new Assessment(job, scan, gaps);
+        if (!coach.enabled()) return new Assessment(job, scan, rules);
+        try {
+            return aiAssessment(job, scan, rules, coach.review(job, scan));
+        } catch (Exception error) {
+            log.warn("AI review failed; using keyword rules", error);
+            return new Assessment(job, scan, rules, "AI review was unavailable for this scan (" + error.getMessage() + "). Showing keyword-rule results.", "rules");
+        }
+    }
+    /** Merges the AI verdicts with the scan, enforcing that every positive claim cites a scanned file. */
+    private Assessment aiAssessment(JobRequirement job, PortfolioScan scan, List<Gap> rules, AiCoach.PortfolioReview review) {
+        Map<Skill, AiCoach.SkillVerdict> verdicts = new EnumMap<>(Skill.class);
+        for (AiCoach.SkillVerdict v : Optional.ofNullable(review.verdicts()).orElse(List.of()))
+            if (v != null && v.skill() != null && v.status() != null) verdicts.putIfAbsent(v.skill(), v);
+        List<Gap> gaps = new ArrayList<>();
+        for (Gap rule : rules) {
+            AiCoach.SkillVerdict v = verdicts.get(rule.skill());
+            if (v == null) { gaps.add(rule); continue; }
+            List<Evidence> candidates = coach.candidates(scan, rule.skill());
+            Set<String> cited = new HashSet<>(Optional.ofNullable(v.citedPaths()).orElse(List.of()));
+            List<Evidence> supporting = candidates.stream().filter(e -> cited.contains(e.path())).toList();
+            String status = v.status().name();
+            String confidence = v.confidence() == null ? "MEDIUM" : v.confidence().name();
+            String explanation = v.explanation();
+            if (candidates.isEmpty()) {
+                status = "NOT_DEMONSTRATED";
+                explanation = "The scanner found no candidate files for " + rule.skill().label() + ". This is not proof you lack the skill; it only describes this repository at this revision.";
+            } else if (!status.equals("NOT_DEMONSTRATED") && supporting.isEmpty()) {
+                // A positive verdict without a traceable file is not accepted as-is.
+                status = "PARTIAL"; confidence = "LOW"; supporting = candidates;
+                explanation = explanation + " (The reviewer did not cite a specific file, so this is marked partial.)";
+            }
+            // For rejected skills, show which signals were reviewed so the student can see why.
+            List<Evidence> shown = status.equals("NOT_DEMONSTRATED") ? candidates : supporting;
+            gaps.add(new Gap(rule.skill(), status, explanation, shown, confidence, v.nextStep(), coach.label()));
+        }
+        return new Assessment(job, scan, gaps, review.summary(), coach.label());
     }
     public void watch(RepoRegistration registration) {
         store.saveWatch(registration);

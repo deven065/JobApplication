@@ -13,7 +13,10 @@ const NEXT = {
   TESTING: 'Add a meaningful test that checks behavior or handles a failure case.',
   GIT: 'Document your repository workflow and make focused, descriptive commits.'
 }
+const STATUS = { DEMONSTRATED: ['proved', 'Evidence found'], PARTIAL: ['partial', 'Partial evidence'], NOT_DEMONSTRATED: ['unknown', 'Not demonstrated in this scan'] }
 const pretty = value => value.replaceAll('_', ' ')
+const byAi = value => !!value && value !== 'rules'
+const aiName = value => value?.split(':').slice(1).join(':')
 const sameSkills = (left, right) => left.length === right.length && left.every(skill => right.includes(skill))
 const historyPath = (jobId, repository) => `/assessments/history?jobId=${encodeURIComponent(jobId)}&repository=${encodeURIComponent(repository)}`
 const latestPath = (jobId, repository) => `/assessments/latest?jobId=${encodeURIComponent(jobId)}&repository=${encodeURIComponent(repository)}`
@@ -43,6 +46,9 @@ export default function App() {
   const [installWebhook, setInstallWebhook] = useState(false)
   const [message, setMessage] = useState('Choose a job source and a GitHub repository to begin.')
   const [source, setSource] = useState({ title: '', company: '', sourceUrl: '', postingText: '' })
+  const [ai, setAi] = useState(null)
+
+  useEffect(() => { request('/ai/status').then(setAi).catch(() => setAi(null)) }, [])
 
   useEffect(() => {
     request('/jobs').then(items => {
@@ -141,6 +147,7 @@ export default function App() {
   }
 
   const proved = assessment?.gaps.filter(gap => gap.status === 'DEMONSTRATED').length || 0
+  const partial = assessment?.gaps.filter(gap => gap.status === 'PARTIAL').length || 0
   const earlier = history.find(item => item.portfolio.revision !== assessment?.portfolio.revision)
   const newlyProved = assessment?.gaps.filter(gap => gap.status === 'DEMONSTRATED' && earlier?.gaps.find(old => old.skill === gap.skill)?.status !== 'DEMONSTRATED') || []
   const coverage = assessment?.portfolio
@@ -148,12 +155,13 @@ export default function App() {
   return <main className="page">
     <header><p className="eyebrow">PROOFPATH · CAREER EVIDENCE</p><h1>Show what your <em>code proves.</em></h1><p className="subtitle">Compare a job posting with evidence in your GitHub repository, then see what to build next.</p></header>
     <p className="notice" role="status" aria-live="polite">{busy || message}</p>
+    {ai && <p className={`aiBadge ${ai.enabled ? 'on' : 'off'}`}>{ai.enabled ? `AI review on · ${ai.provider} · ${ai.model}` : 'AI review off'} — {ai.message}</p>}
     <section className="grid">
       <article className="panel"><h2>1. Choose a job</h2><p className="hint">Paste a public employer posting. Review the detected requirements before you scan.</p>
         {savedJobs.length > 0 && <label>Previous jobs<select value={savedJobs.some(item => item.id === job?.id) ? job.id : ''} onChange={event => { const next = savedJobs.find(item => item.id === event.target.value); if (next) chooseJob(next) }}><option value="">Select a saved job</option>{savedJobs.map(item => <option key={item.id} value={item.id}>{item.title} · {item.company}</option>)}</select></label>}
         <form onSubmit={discoverJob}><label>Role<input required value={source.title} onChange={event => setSource({ ...source, title: event.target.value })} placeholder="Backend Engineer Intern" /></label><label>Company<input required value={source.company} onChange={event => setSource({ ...source, company: event.target.value })} placeholder="Company name" /></label><label>Job posting URL<input required type="url" value={source.sourceUrl} onChange={event => setSource({ ...source, sourceUrl: event.target.value })} placeholder="https://careers.example.com/job" /></label><label>Posting text (optional)<textarea value={source.postingText} onChange={event => setSource({ ...source, postingText: event.target.value })} placeholder="If the website blocks fetching, paste the job description here." rows="4" /></label><button disabled={!!busy}>Read job posting</button></form>
         <button className="linkButton" type="button" onClick={loadDemo}>Try the demo role</button>
-        {job && <div className="source"><strong>{job.title} · {job.company}</strong><a href={job.sourceUrl} target="_blank" rel="noreferrer">View source ↗</a><p className="hint">Select only the requirements relevant to this role.</p><div className="skillChoices">{SKILLS.map(skill => <label className="check" key={skill}><input type="checkbox" checked={selectedSkills.includes(skill)} onChange={() => setSelectedSkills(current => current.includes(skill) ? current.filter(item => item !== skill) : [...current, skill])} />{pretty(skill)}</label>)}</div><button type="button" className="secondary" disabled={!!busy || selectedSkills.length === 0 || sameSkills(selectedSkills, job.requiredSkills)} onClick={saveRequirements}>Save requirements</button></div>}
+        {job && <div className="source"><strong>{job.title} · {job.company}</strong><a href={job.sourceUrl} target="_blank" rel="noreferrer">View source ↗</a><p className="hint">{byAi(job.extractedBy) ? `Requirements read by AI (${aiName(job.extractedBy)}). Each one quotes the posting.` : 'Requirements matched by keyword rules.'} Select only the requirements relevant to this role.</p>{job.requirementQuotes?.length > 0 && <ul className="quotes">{job.requirementQuotes.map(item => <li key={item.skill}><strong>{pretty(item.skill)}</strong>{item.importance === 'PREFERRED' ? ' (preferred)' : ''}: “{item.quote}”</li>)}</ul>}<div className="skillChoices">{SKILLS.map(skill => <label className="check" key={skill}><input type="checkbox" checked={selectedSkills.includes(skill)} onChange={() => setSelectedSkills(current => current.includes(skill) ? current.filter(item => item !== skill) : [...current, skill])} />{pretty(skill)}</label>)}</div><button type="button" className="secondary" disabled={!!busy || selectedSkills.length === 0 || sameSkills(selectedSkills, job.requiredSkills)} onClick={saveRequirements}>Save requirements</button></div>}
       </article>
       <article className="panel"><h2>2. Check your repository</h2><p className="hint">Enter a public GitHub repository or paste its URL. Leave branch empty to use its default branch.</p><label>Repository<input value={repository} onChange={event => { setRepository(event.target.value); setRepoDetails(null); setWatching(false) }} placeholder="owner/repository" /></label><label>Branch (optional)<input value={branch} onChange={event => { setBranch(event.target.value); setWatching(false) }} placeholder="Use repository default" /></label><button className="secondary" type="button" disabled={!!busy} onClick={resolveRepository}>Check repository</button>{repoDetails && <p className="hint">Found <a href={repoDetails.htmlUrl} target="_blank" rel="noreferrer">{repoDetails.fullName}</a> · default branch: {repoDetails.defaultBranch}</p>}
         <div className="actions"><button type="button" onClick={assess} disabled={!!busy || !job || !repository.trim()}>{assessment ? 'Rescan now' : 'Assess repository'}</button><button type="button" className="secondary" onClick={watch} disabled={!!busy || !assessment}>Watch changes</button></div>
@@ -161,10 +169,10 @@ export default function App() {
         {watching && <p className="watching">Watching for changes. This page checks for updated results every 10 seconds.</p>}
       </article>
     </section>
-    {assessment && <section className="panel results"><h2>3. Your assessment</h2><p className="score">{proved} of {assessment.gaps.length} requirements demonstrated</p><p className="hint">A missing signal means only that this scan did not find evidence. It does not mean you lack the skill.</p>
+    {assessment && <section className="panel results"><h2>3. Your assessment</h2><p className="score">{proved} of {assessment.gaps.length} requirements demonstrated{partial ? ` · ${partial} partial` : ''}</p><p className="hint">{byAi(assessment.assessedBy) ? `Reviewed by AI (${assessment.assessedBy}). Keyword matches were checked against the actual code; every positive verdict cites a scanned file.` : 'Assessed with keyword rules.'}</p>{assessment.summary && <p className="summary">{assessment.summary}</p>}<p className="hint">A missing signal means only that this scan did not find evidence. It does not mean you lack the skill.</p>
       <div className="coverage"><p><strong>Scan coverage:</strong> {coverage.scannedFiles} relevant files read{coverage.skippedFiles > 0 ? `, ${coverage.skippedFiles} skipped` : ''}{coverage.treeTruncated ? '; GitHub returned a partial file tree' : ''}.</p><p className="revision">Branch {coverage.branch} · commit <code>{coverage.revision}</code> · {new Date(coverage.scannedAt).toLocaleString()}</p>{(coverage.skippedFiles > 0 || coverage.treeTruncated) && <p className="hint">Some files were not inspected, so missing evidence may be incomplete.</p>}</div>
       {earlier && assessment.portfolio.revision === history[0]?.portfolio.revision && <p className="watching">Since the previous commit: {newlyProved.length ? `${newlyProved.map(gap => pretty(gap.skill)).join(', ')} now demonstrated.` : 'No new requirement demonstrated yet.'}</p>}
-      <div className="gapGrid">{assessment.gaps.map(gap => <article className={`gap ${gap.status === 'DEMONSTRATED' ? 'proved' : 'unknown'}`} key={gap.skill}><h3>{pretty(gap.skill)}</h3><span>{gap.status === 'DEMONSTRATED' ? 'Evidence found' : 'Not demonstrated in this scan'}</span><p>{gap.explanation}</p>{gap.status !== 'DEMONSTRATED' && <p><strong>Try next:</strong> {NEXT[gap.skill]}</p>}{gap.evidence.map(evidence => <div className="evidence" key={evidence.url}><a href={evidence.url} target="_blank" rel="noreferrer">{evidence.path} ↗</a><code>{evidence.snippet}</code></div>)}</article>)}</div>
+      <div className="gapGrid">{assessment.gaps.map(gap => <article className={`gap ${(STATUS[gap.status] || STATUS.NOT_DEMONSTRATED)[0]}`} key={gap.skill}><h3>{pretty(gap.skill)}</h3><span>{(STATUS[gap.status] || STATUS.NOT_DEMONSTRATED)[1]}{gap.confidence ? ` · ${gap.confidence.toLowerCase()} confidence` : ''}</span><p>{gap.explanation}</p>{gap.status !== 'DEMONSTRATED' && <p><strong>Try next:</strong> {gap.nextStep || NEXT[gap.skill]}</p>}{gap.status === 'NOT_DEMONSTRATED' && gap.evidence.length > 0 && <p className="hint">Keyword signals reviewed but not accepted as evidence:</p>}{gap.evidence.map(evidence => <div className="evidence" key={evidence.url}><a href={evidence.url} target="_blank" rel="noreferrer">{evidence.path} ↗</a><code>{evidence.snippet}</code></div>)}</article>)}</div>
       {history.length > 1 && <div className="history"><h3>Previous scans</h3><p className="hint">Open an older scan to see how your evidence changed.</p><div className="historyItems">{history.map((item, index) => <button type="button" className={assessment.portfolio.scannedAt === item.portfolio.scannedAt ? 'activeHistory' : 'secondary'} key={`${item.portfolio.scannedAt}-${index}`} onClick={() => setAssessment(item)}>{new Date(item.portfolio.scannedAt).toLocaleString()} · {item.gaps.filter(gap => gap.status === 'DEMONSTRATED').length}/{item.gaps.length}</button>)}</div></div>}
     </section>}
   </main>
