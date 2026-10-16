@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 // Empty in local development: Vite proxies /api to Spring Boot. Set VITE_API_BASE_URL for deployment.
 const API = import.meta.env.VITE_API_BASE_URL || '/api'
@@ -17,8 +17,23 @@ export default function App() {
   const [job, setJob] = useState(null)
   const [assessment, setAssessment] = useState(null)
   const [loading, setLoading] = useState(false)
+  const [watching, setWatching] = useState(false)
+  const [installWebhook, setInstallWebhook] = useState(false)
   const [message, setMessage] = useState('Choose a real job source, then inspect a public GitHub repository.')
   const [source, setSource] = useState({ title: '', company: '', sourceUrl: '' })
+
+  useEffect(() => {
+    if (!watching || !job || !repository.trim()) return undefined
+    const refresh = async () => {
+      try {
+        const result = await request(`/assessments/latest?jobId=${encodeURIComponent(job.id)}&repository=${encodeURIComponent(repository.trim())}`)
+        setAssessment(previous => previous?.portfolio.revision === result.portfolio.revision ? previous : result)
+      } catch { /* Keep the last evidence visible if the background refresh fails. */ }
+    }
+    refresh()
+    const timer = window.setInterval(refresh, 10_000)
+    return () => window.clearInterval(timer)
+  }, [watching, job, repository])
 
   async function loadDemo() {
     try { setJob(await request('/jobs/demo')); setMessage('Demo role loaded. Replace it with a real employer source before presenting.') }
@@ -46,8 +61,9 @@ export default function App() {
   async function watch() {
     if (!repository.trim()) return setMessage('Enter a repository first.')
     try {
-      await request('/repositories/watch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ repository: repository.trim(), branch, webhookSecret: '' }) })
-      setMessage('Repository is watched. A GitHub push rescans immediately; polling checks every minute.')
+      const result = await request('/repositories/watch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ repository: repository.trim(), branch, installGitHubWebhook: installWebhook }) })
+      setWatching(true)
+      setMessage(result.message)
     } catch (error) { setMessage(error.message) }
   }
 
@@ -60,7 +76,7 @@ export default function App() {
         <button className="linkButton" onClick={loadDemo}>Load transparent demo role</button>
         {job && <div className="source"><strong>{job.title} · {job.company}</strong><a href={job.sourceUrl} target="_blank" rel="noreferrer">Open source ↗</a><p>Detected requirements: {job.requiredSkills.map(pretty).join(', ') || 'No supported skills matched yet'}</p></div>}
       </article>
-      <article className="panel"><h2>2. Portfolio evidence</h2><p className="hint">Public repositories work with no token. Set <code>GITHUB_TOKEN</code> on the backend for private repositories.</p><label>Repository<input value={repository} onChange={e => setRepository(e.target.value)} placeholder="owner/repository" /></label><label>Branch<input value={branch} onChange={e => setBranch(e.target.value)} /></label><div className="actions"><button onClick={assess} disabled={loading}>{loading ? 'Scanning…' : 'Assess repository'}</button><button className="secondary" onClick={watch}>Watch changes</button></div>{assessment && <p className="revision">Scanned <code>{assessment.portfolio.revision}</code> at {new Date(assessment.portfolio.scannedAt).toLocaleString()}.</p>}</article>
+      <article className="panel"><h2>2. Portfolio evidence</h2><p className="hint">Public repositories work with no token. Set <code>GITHUB_TOKEN</code> on the backend for private repositories or GitHub webhook creation.</p><label>Repository<input value={repository} onChange={e => { setRepository(e.target.value); setWatching(false) }} placeholder="owner/repository" /></label><label>Branch<input value={branch} onChange={e => { setBranch(e.target.value); setWatching(false) }} placeholder="Leave as main, or use the repository default" /></label><label className="check"><input type="checkbox" checked={installWebhook} onChange={e => setInstallWebhook(e.target.checked)} /> Create a real GitHub push webhook (requires backend HTTPS callback configuration)</label><div className="actions"><button onClick={assess} disabled={loading}>{loading ? 'Scanning…' : 'Assess repository'}</button><button className="secondary" onClick={watch}>Watch changes</button></div>{watching && <p className="watching">Watching: the UI refreshes every 10 seconds after a repository change.</p>}{assessment && <p className="revision">Scanned <code>{assessment.portfolio.revision}</code> at {new Date(assessment.portfolio.scannedAt).toLocaleString()}.</p>}</article>
     </section>
     {assessment && <section className="panel results"><h2>3. Evidence-backed assessment</h2><p className="hint">Every green item includes a file at the exact scanned Git commit. Yellow means only “not demonstrated in this scan.”</p><div className="gapGrid">{assessment.gaps.map(gap => <article className={`gap ${gap.status === 'DEMONSTRATED' ? 'proved' : 'unknown'}`} key={gap.skill}><h3>{pretty(gap.skill)}</h3><span>{pretty(gap.status)}</span><p>{gap.explanation}</p>{gap.evidence.map(evidence => <div className="evidence" key={evidence.url}><a href={evidence.url} target="_blank" rel="noreferrer">{evidence.path} ↗</a><code>{evidence.snippet}</code></div>)}</article>)}</div></section>}
   </main>
