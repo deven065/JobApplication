@@ -39,24 +39,32 @@ public class GitHubPortfolioService {
         String[] id = repositoryId(repository);
         JsonNode commit = json(github.get().uri("/repos/{owner}/{name}/commits/{ref}", id[0], id[1], ref).retrieve().body(String.class));
         String sha = Objects.requireNonNull(commit).path("sha").asText();
-        JsonNode tree = json(github.get().uri("/repos/{owner}/{name}/git/trees/{sha}?recursive=1", id[0], id[1], sha).retrieve().body(String.class));
+        String treeSha = commit.path("commit").path("tree").path("sha").asText();
+        if (sha.isBlank() || treeSha.isBlank()) throw new IllegalStateException("GitHub did not return a complete commit tree.");
+        JsonNode tree = json(github.get().uri("/repos/{owner}/{name}/git/trees/{sha}?recursive=1", id[0], id[1], treeSha).retrieve().body(String.class));
         Map<Skill, List<Evidence>> found = new EnumMap<>(Skill.class);
-        int inspected = 0;
+        int attempted = 0;
+        int scanned = 0;
+        int skipped = 0;
+        boolean truncated = tree.path("truncated").asBoolean();
         for (JsonNode node : Objects.requireNonNull(tree).path("tree")) {
             String path = node.path("path").asText();
-            if (!"blob".equals(node.path("type").asText()) || !isRelevant(path) || inspected++ >= 80) continue;
+            if (!"blob".equals(node.path("type").asText()) || !isRelevant(path)) continue;
+            if (attempted >= 80) { skipped++; continue; }
+            attempted++;
             try {
                 String raw = json(github.get().uri("/repos/{owner}/{name}/git/blobs/{blob}", id[0], id[1], node.path("sha").asText())
                         .retrieve().body(String.class)).path("content").asText();
                 String content = new String(Base64.getMimeDecoder().decode(raw), StandardCharsets.UTF_8);
+                scanned++;
                 for (Skill skill : SkillMatcher.skillsIn(content)) {
                     String snippet = content.lines().filter(l -> SkillMatcher.skillsIn(l).contains(skill)).findFirst().orElse("").trim();
                     String url = "https://github.com/" + repository + "/blob/" + sha + "/" + path;
                     found.computeIfAbsent(skill, k -> new ArrayList<>()).add(new Evidence(skill, path, url, SkillMatcher.reason(skill), snippet));
                 }
-            } catch (Exception ignored) { /* Binary/too-large/inaccessible files are not evidence. */ }
+            } catch (Exception ignored) { skipped++; /* Binary/too-large/inaccessible files are not evidence. */ }
         }
-        return new PortfolioScan(repository, sha, Instant.now(), found);
+        return new PortfolioScan(repository, ref, sha, Instant.now(), found, scanned, skipped, truncated);
     }
     public String latestRevision(String repository, String branch) {
         String[] id = repositoryId(repository);
@@ -71,9 +79,12 @@ public class GitHubPortfolioService {
         github.post().uri("/repos/{owner}/{name}/hooks", id[0], id[1]).body(body).retrieve().toBodilessEntity();
     }
     private String[] repositoryId(String repository) {
-        String[] parts = repository == null ? new String[0] : repository.trim().split("/", -1);
-        if (parts.length != 2 || parts[0].isBlank() || parts[1].isBlank())
-            throw new IllegalArgumentException("Repository must use the form owner/repository.");
+        String value = repository == null ? "" : repository.trim();
+        if (value.startsWith("https://github.com/")) value = value.substring("https://github.com/".length());
+        value = value.replaceAll("/+$", "").replaceAll("\\.git$", "");
+        String[] parts = value.split("/", -1);
+        if (parts.length != 2 || !parts[0].matches("[A-Za-z0-9-]+") || !parts[1].matches("[A-Za-z0-9_.-]+"))
+            throw new IllegalArgumentException("Enter a GitHub repository as owner/name or paste its URL.");
         return parts;
     }
     private JsonNode json(String body) {

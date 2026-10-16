@@ -8,19 +8,35 @@ import java.util.concurrent.ConcurrentHashMap;
 @Service
 public class AssessmentService {
     private final GitHubPortfolioService github;
+    private final StateStore store;
     private final Map<String, RepoRegistration> watched = new ConcurrentHashMap<>();
     private final Map<String, PortfolioScan> scans = new ConcurrentHashMap<>();
     private final Map<String, Assessment> latestAssessments = new ConcurrentHashMap<>();
     private final Map<String, AssessmentSubscription> subscriptions = new ConcurrentHashMap<>();
-    public AssessmentService(GitHubPortfolioService github) { this.github = github; }
+    public AssessmentService(GitHubPortfolioService github, StateStore store) {
+        this.github = github;
+        this.store = store;
+        for (RepoRegistration watch : store.watches()) watched.put(repoKey(watch.repository()), watch);
+        for (StateStore.SavedAssessment saved : store.assessments()) {
+            Assessment assessment = saved.assessment();
+            String repository = assessment.portfolio().repository();
+            String key = key(assessment.job().id(), repository);
+            latestAssessments.put(key, assessment);
+            scans.put(repoKey(repository), assessment.portfolio());
+            subscriptions.put(key, new AssessmentSubscription(assessment.job(), repository, saved.branch()));
+        }
+    }
 
     public Assessment assess(JobRequirement job, String repository, String branch) {
-        String resolvedBranch = branch == null || branch.isBlank() ? github.repository(repository).defaultBranch() : branch;
-        PortfolioScan scan = github.scan(repository, resolvedBranch);
-        scans.put(repository, scan);
+        GitHubRepository resolved = github.repository(repository);
+        String canonical = resolved.fullName();
+        String resolvedBranch = branch == null || branch.isBlank() ? resolved.defaultBranch() : branch;
+        PortfolioScan scan = github.scan(canonical, resolvedBranch);
         Assessment assessment = buildAssessment(job, scan);
-        String key = key(job.id(), repository);
-        subscriptions.put(key, new AssessmentSubscription(job, repository, resolvedBranch));
+        String key = key(job.id(), canonical);
+        store.saveAssessment(key, resolvedBranch, assessment);
+        scans.put(repoKey(canonical), scan);
+        subscriptions.put(key, new AssessmentSubscription(job, canonical, resolvedBranch));
         latestAssessments.put(key, assessment);
         return assessment;
     }
@@ -33,25 +49,37 @@ public class AssessmentService {
         }).toList();
         return new Assessment(job, scan, gaps);
     }
-    public void watch(RepoRegistration registration) { watched.put(registration.repository(), registration); }
+    public void watch(RepoRegistration registration) {
+        store.saveWatch(registration);
+        watched.put(repoKey(registration.repository()), registration);
+    }
     public Collection<RepoRegistration> watches() { return watched.values(); }
-    public Optional<RepoRegistration> watch(String repository) { return Optional.ofNullable(watched.get(repository)); }
-    public Optional<PortfolioScan> lastScan(String repository) { return Optional.ofNullable(scans.get(repository)); }
+    public Optional<RepoRegistration> watch(String repository) { return Optional.ofNullable(watched.get(repoKey(repository))); }
+    public Optional<PortfolioScan> lastScan(String repository) { return Optional.ofNullable(scans.get(repoKey(repository))); }
     public List<Assessment> reassessRepository(String repository) {
-        RepoRegistration r = watched.get(repository);
+        RepoRegistration r = watched.get(repoKey(repository));
         if (r == null) return List.of();
         PortfolioScan scan = github.scan(r.repository(), r.branch());
-        scans.put(repository, scan);
+        scans.put(repoKey(repository), scan);
         List<Assessment> updated = new ArrayList<>();
         for (AssessmentSubscription subscription : subscriptions.values()) {
-            if (!subscription.repository().equals(repository)) continue;
+            if (!subscription.repository().equalsIgnoreCase(repository) || !subscription.branch().equals(r.branch())) continue;
             Assessment assessment = buildAssessment(subscription.job(), scan);
+            store.saveAssessment(key(subscription.job().id(), repository), subscription.branch(), assessment);
             latestAssessments.put(key(subscription.job().id(), repository), assessment);
             updated.add(assessment);
         }
         return updated;
     }
     public Optional<Assessment> latestAssessment(String jobId, String repository) { return Optional.ofNullable(latestAssessments.get(key(jobId, repository))); }
-    private String key(String jobId, String repository) { return jobId + "|" + repository; }
+    public List<Assessment> history(String jobId, String repository) { return store.history(key(jobId, repository)); }
+    public void invalidateJob(String jobId) {
+        store.deleteCurrentAssessments(jobId);
+        String prefix = jobId + "|";
+        subscriptions.keySet().removeIf(key -> key.startsWith(prefix));
+        latestAssessments.keySet().removeIf(key -> key.startsWith(prefix));
+    }
+    private String key(String jobId, String repository) { return jobId + "|" + repoKey(repository); }
+    private String repoKey(String repository) { return repository.trim().toLowerCase(Locale.ROOT); }
     private record AssessmentSubscription(JobRequirement job, String repository, String branch) { }
 }

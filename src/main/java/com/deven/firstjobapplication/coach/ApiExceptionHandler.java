@@ -6,6 +6,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.client.RestClientResponseException;
 import java.util.Map;
+import java.util.NoSuchElementException;
 
 /** Converts GitHub failures into actionable API responses instead of stack traces. */
 @RestControllerAdvice
@@ -17,11 +18,21 @@ public class ApiExceptionHandler {
             return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(Map.of("message", "GitHub rate limit reached. Set GITHUB_TOKEN and restart the backend, then try again."));
         if (error.getStatusCode().value() == 404)
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "GitHub repository or branch was not found, or your token cannot access it."));
+        if (error.getStatusCode().value() == 401)
+            return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of("message", "GitHub rejected the configured token. Check GITHUB_TOKEN and restart the backend."));
         return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of("message", "GitHub API request failed: " + error.getStatusCode().value()));
     }
 
     @ExceptionHandler({IllegalArgumentException.class, IllegalStateException.class})
     ResponseEntity<Map<String, String>> invalidRequest(RuntimeException error) {
         return ResponseEntity.badRequest().body(Map.of("message", error.getMessage()));
+    }
+    @ExceptionHandler(NoSuchElementException.class)
+    ResponseEntity<Map<String, String>> missing(NoSuchElementException error) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", error.getMessage()));
+    }
+    @ExceptionHandler(SecurityException.class)
+    ResponseEntity<Map<String, String>> forbidden(SecurityException error) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", error.getMessage()));
     }
 }

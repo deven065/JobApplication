@@ -2,24 +2,57 @@ package com.deven.firstjobapplication.coach;
 
 import com.deven.firstjobapplication.coach.Models.JobRequirement;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestClient;
+import java.net.InetAddress;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 
 /** Fetches the source page at assessment time; the page URL and extract remain traceable. */
 @Service
 public class JobDiscoveryService {
-    private final RestClient http = RestClient.builder().defaultHeader("User-Agent", "AI-Career-Coach-Demo").build();
+    private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5))
+            .followRedirects(HttpClient.Redirect.NEVER).build();
 
-    public JobRequirement discover(String title, String company, String sourceUrl) {
-        String html;
-        try { html = http.get().uri(sourceUrl).retrieve().body(String.class); }
-        catch (Exception e) { throw new IllegalArgumentException("Could not fetch job source: " + e.getMessage()); }
+    public JobRequirement discover(String title, String company, String sourceUrl, String pastedText) {
+        if (title == null || title.isBlank() || company == null || company.isBlank())
+            throw new IllegalArgumentException("Enter the role and company.");
+        URI uri;
+        try { uri = URI.create(sourceUrl); }
+        catch (Exception error) { throw new IllegalArgumentException("Enter a valid public job URL."); }
+        if (uri.getHost() == null || !("https".equalsIgnoreCase(uri.getScheme()) || "http".equalsIgnoreCase(uri.getScheme())))
+            throw new IllegalArgumentException("Enter a public HTTP or HTTPS job URL.");
+        if (pastedText != null && pastedText.length() > 100_000)
+            throw new IllegalArgumentException("Job posting text is too long. Paste at most 100,000 characters.");
+        String html = pastedText == null || pastedText.isBlank() ? fetch(uri) : pastedText;
         String text = html.replaceAll("(?is)<script.*?</script>|<style.*?</style>|<[^>]+>", " ")
                 .replaceAll("\\s+", " ").trim();
+        if (text.isBlank()) throw new IllegalArgumentException("No readable job text was found. Paste the posting text and try again.");
         List<Skill> skills = SkillMatcher.skillsIn(text);
         String excerpt = text.length() > 900 ? text.substring(0, 900) + "..." : text;
         return new JobRequirement(UUID.randomUUID().toString(), title, company, sourceUrl, excerpt, skills, Instant.now());
+    }
+
+    private String fetch(URI uri) {
+        try {
+            for (InetAddress address : InetAddress.getAllByName(uri.getHost())) {
+                byte[] bytes = address.getAddress();
+                if (address.isAnyLocalAddress() || address.isLoopbackAddress() || address.isLinkLocalAddress()
+                        || address.isSiteLocalAddress() || address.isMulticastAddress()
+                        || (bytes.length == 16 && (bytes[0] & 0xfe) == 0xfc))
+                    throw new IllegalArgumentException("Use a public job URL. Local network addresses are not allowed.");
+            }
+            HttpRequest request = HttpRequest.newBuilder(uri).timeout(Duration.ofSeconds(10))
+                    .header("User-Agent", "ProofPath-Demo").GET().build();
+            HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() < 200 || response.statusCode() >= 300)
+                throw new IllegalArgumentException("This job page could not be read (HTTP " + response.statusCode() + "). Paste the posting text instead.");
+            return response.body();
+        } catch (IllegalArgumentException error) { throw error; }
+        catch (Exception error) { throw new IllegalArgumentException("This job page could not be read. Paste the posting text instead."); }
     }
 
     /** A real public careers-page source used only as a convenient starting point in the UI. */
