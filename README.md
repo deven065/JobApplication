@@ -1,106 +1,251 @@
-# ProofPath — Career Evidence Coach
+<div align="center">
 
-ProofPath compares real job requirements with evidence in a student's GitHub repository. Every demonstrated skill includes the source file, immutable commit link, and matched code signal. A missing signal means only `NOT_DEMONSTRATED` in the scanned scope.
+# ProofPath — AI Career Evidence Coach
 
-## Run locally
+**Show what your portfolio proves, and what it does not.**
 
-Requires Java 17+ and Node.js 20+.
+*A Kurukshetra Hackathon project · Challenge: AI Career Coach (sponsored by Worcflow)*
+
+![Java](https://img.shields.io/badge/Java-17+-orange)
+![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.1-6DB33F)
+![React](https://img.shields.io/badge/React-18-61DAFB)
+![AI](https://img.shields.io/badge/AI-Groq%20%7C%20Gemini%20%7C%20Claude-8A2BE2)
+![Database](https://img.shields.io/badge/DB-H2%20%7C%20PostgreSQL-blue)
+
+</div>
+
+---
+
+## Table of contents
+
+- [About the project](#about-the-project)
+- [Key features](#key-features)
+- [How it works](#how-it-works)
+- [Tech stack](#tech-stack)
+- [Getting started](#getting-started)
+- [Configuration](#configuration)
+- [Demo walkthrough](#demo-walkthrough)
+- [Trust and traceability](#trust-and-traceability)
+- [API reference](#api-reference)
+- [Project structure](#project-structure)
+- [Testing](#testing)
+- [Limitations](#limitations)
+- [Author](#author)
+
+---
+
+## About the project
+
+ProofPath is my project for the **Kurukshetra Hackathon**, built for the **AI Career Coach** challenge.
+
+Students often list skills on a resume that their public code does not show. ProofPath compares the requirements of a **real job or internship posting** with the evidence in a student's **actual GitHub repository**. It explains each gap and points to the exact files and commits behind every conclusion.
+
+It also keeps watching. When the student pushes new code, ProofPath detects the change and reassesses the affected skills automatically. This closes the loop the challenge asks for:
+
+> **job requirements → repository evidence → gaps → code change → updated assessment**
+
+A missing signal means *"not demonstrated in this scan"*. It is never treated as proof that the student lacks the skill.
+
+## Key features
+
+| Feature | What it does |
+|---|---|
+| **Real job requirements** | Reads a public posting URL, or posting text you paste in, and keeps the source link. The AI extracts each required skill together with the **exact phrase** from the posting. |
+| **Evidence from real code** | Uses the GitHub REST API to read the repository at a specific commit. Every piece of evidence links to the **file and line at that commit**. |
+| **AI review of the evidence** | An LLM reads the code around each keyword match and rates each skill `DEMONSTRATED`, `PARTIAL` or `NOT_DEMONSTRATED`, with a confidence level, an explanation and a concrete next step. |
+| **Gap explanations** | A summary of how well the repository fits the role, plus a small, practical project suggestion for each gap. |
+| **Automatic change detection** | Polls GitHub every minute, or receives a signed GitHub **push webhook**, then rescans and reassesses automatically. No manual refresh. |
+| **History** | Every assessment is stored, so you can compare before and after a commit. |
+| **Free AI options** | Works with free **Groq** or **Google Gemini** keys, or with **Anthropic Claude**. Without a key it falls back to keyword rules. |
+
+## How it works
+
+```mermaid
+flowchart LR
+    A[Job posting URL / text] -->|AI extracts skills + quotes| B[Job requirements]
+    C[GitHub repository @ commit SHA] -->|Keyword scanner picks candidate files| D[Candidate evidence]
+    B --> E{AI reviewer}
+    D --> E
+    E -->|Guardrails verify citations| F[Assessment: verdicts, gaps, next steps]
+    G[New commit pushed] -->|Webhook or 1-minute polling| C
+    F --> H[React dashboard + history]
+```
+
+1. **Discover.** The backend fetches the posting, blocking private and local network addresses, and strips the HTML. The AI maps the text onto the skill taxonomy and quotes the phrase that justifies each skill.
+2. **Scan.** The scanner resolves the branch to a commit SHA, reads the recursive file tree, and inspects up to 80 relevant source and configuration files. Keyword rules pick the candidate files for each skill and capture the code around each match.
+3. **Review.** The AI judges whether each candidate file really shows the skill, which filters out false positives such as "delete" in a comment or `github.com` in a URL.
+4. **Verify.** Server-side guardrails accept a positive verdict only if it cites a file that was actually scanned (see [Trust and traceability](#trust-and-traceability)).
+5. **Watch.** On every new commit, all tracked assessments for that repository are recomputed and stored in history. The UI refreshes every 10 seconds.
+
+## Tech stack
+
+| Layer | Technology |
+|---|---|
+| Backend | Java 17+, Spring Boot 4.1 (Web MVC, JDBC, Scheduling) |
+| AI | Groq / Google Gemini (OpenAI-compatible API, JSON mode), Anthropic Claude (`anthropic-java` SDK, structured outputs) |
+| Integrations | GitHub REST API, GitHub push webhooks (HMAC-SHA256 verified) |
+| Persistence | H2 (embedded, file-based). PostgreSQL is optional |
+| Frontend | React 18, Vite 5 |
+| Testing | JUnit 5, Mockito, AssertJ, Spring Boot Test |
+
+## Getting started
+
+### Prerequisites
+
+- **Java 17+**
+- **Node.js 20+**
+- *(Recommended)* A free AI key from [Groq](https://console.groq.com/keys) or [Google AI Studio](https://aistudio.google.com/apikey)
+
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/deven065/JobApplication.git
+```
+
+### 2. Add your AI key
+
+Copy `.env.example` to `.env` in the project root and add **one** key. `.env` is gitignored and is read however the backend is started (IntelliJ, VS Code or the terminal).
+
+```properties
+GROQ_API_KEY=gsk_your_key_here
+```
+
+### 3. Start the backend (port 8081)
 
 ```powershell
-# Terminal 1: backend
 .\mvnw.cmd spring-boot:run
+```
 
-# Terminal 2: React application
+On macOS or Linux, use `./mvnw spring-boot:run`. The log should show:
+
+```
+AI coach enabled: groq:openai/gpt-oss-120b
+```
+
+### 4. Start the frontend (port 5173)
+
+```powershell
 cd frontend
 npm install
 npm run dev
 ```
 
-Open `http://localhost:5173`. The backend runs at `http://localhost:8081` because port 8080 is occupied locally.
+Open **http://localhost:5173**. Vite forwards `/api` requests to the backend. A badge on the page shows whether AI review is on.
 
-The local H2 database is saved as `proofpath-data.mv.db` in the backend working directory. It preserves jobs, watches, current assessments, and scan history across restarts. Tests use an isolated in-memory database. For PostgreSQL, set `DATABASE_URL`, `DATABASE_USERNAME`, and `DATABASE_PASSWORD` before launching the backend.
+> **Note:** Run only one backend at a time. H2 locks `proofpath-data.mv.db`, so stop the IntelliJ run before starting from a terminal, and the other way round.
 
-## AI review
+## Configuration
 
-An LLM is used in two places. Pick one provider. **Groq and Gemini both have free API keys that need no credit card.**
+Every setting can be supplied as an environment variable or a line in `.env`.
 
-| Provider | Cost | Speed | Default model | Get a key |
-|---|---|---|---|---|
-| Groq | Free tier | Fastest | `openai/gpt-oss-120b` | https://console.groq.com/keys |
-| Google Gemini | Free tier | Fast, larger token limits | `gemini-2.5-flash` | https://aistudio.google.com/apikey |
-| Anthropic Claude | Paid | Slower, strongest reviews | `claude-opus-5-5` | https://console.anthropic.com |
+### AI providers
 
-Easiest (works from IntelliJ, VS Code or the terminal): copy `.env.example` to `.env` in the project root and put your key in it. `.env` is gitignored.
+| Variable | Default | Purpose |
+|---|---|---|
+| `GROQ_API_KEY` | — | Free, fastest. Recommended for the demo |
+| `GEMINI_API_KEY` | — | Free alternative with higher token limits |
+| `ANTHROPIC_API_KEY` | — | Paid. Strongest reviews |
+| `GROQ_MODEL` | `openai/gpt-oss-120b` | Groq model override |
+| `GEMINI_MODEL` | `gemini-2.5-flash` | Gemini model override |
+| `ANTHROPIC_MODEL` | `claude-opus-5-5` | Claude model override |
+| `AI_PROVIDER` | `auto` | Forces `groq`, `gemini` or `claude` when several keys are set. `auto` uses the first configured key in the order Groq → Gemini → Claude |
 
-```properties
-GROQ_API_KEY=gsk_...
+Free-tier limits change often. Groq's free tier allows few tokens per minute, so ProofPath sends it at most 3 files per skill, with about 700 characters of code from each.
+
+### GitHub
+
+| Variable | Purpose |
+|---|---|
+| `GITHUB_TOKEN` | Optional. Raises GitHub's API rate limit and allows private repositories. Use a fine-grained token with **Contents: Read** (and **Webhooks: Read and write** for automatic webhook creation) |
+| `GITHUB_WEBHOOK_PUBLIC_BASE_URL` | Public HTTPS URL of the backend (for example, a tunnel). Needed only to install a push webhook |
+
+### Database
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `DATABASE_URL` | `jdbc:h2:file:./proofpath-data;MODE=PostgreSQL` | JDBC URL. Set a PostgreSQL URL to switch databases |
+| `DATABASE_USERNAME` / `DATABASE_PASSWORD` | `sa` / *(empty)* | Database credentials |
+| `FRONTEND_ORIGIN` | `http://localhost:5173` | Allowed CORS origin(s) for a deployed frontend |
+
+H2 stores its data in `proofpath-data.mv.db` in the project root. The four tables (`coach_jobs`, `coach_watches`, `coach_assessments`, `coach_history`) are created automatically. To start with an empty database, stop the backend and delete `proofpath-data.mv.db` and `proofpath-data.trace.db`.
+
+## Demo walkthrough
+
+1. **Choose a job.** Enter the role, company and the posting's URL, then click **Read job posting**. If the site blocks fetching, paste the posting text; the source URL is still kept. Review the detected skills and their quotes.
+2. **Assess a repository.** Enter `owner/repository` and click **Assess repository**. Open the evidence links; each one points to the scanned commit.
+3. **Watch changes.** Click **Watch changes**. GitHub is checked every minute, or immediately with a webhook.
+4. **Make a real change.** Push a commit that adds a SQL file, for example `queries/applications.sql`:
+   ```sql
+   SELECT id, company, status FROM applications WHERE status = 'APPLIED';
+   ```
+5. **See the updated assessment.** Within about a minute, SQL changes from *Not demonstrated* to *Evidence found* and cites the new file and commit. The page shows what changed since the previous commit, and the history keeps both scans.
+
+## Trust and traceability
+
+The AI is never the only source of truth. `AssessmentService` checks every result against the scan:
+
+- **No evidence, no claim.** A skill with no scanned candidate file is always `NOT_DEMONSTRATED`, whatever the model says.
+- **Citations are checked.** A positive verdict that does not cite a scanned file is downgraded to `PARTIAL` with low confidence.
+- **Requirement quotes are checked.** A requirement whose quote does not appear word for word in the posting is dropped.
+- **Rejected signals stay visible.** Keyword matches the AI rejected are still shown, so the student can see what was checked.
+- **Coverage is reported.** The UI shows how many files were read and skipped, and whether GitHub returned a partial file tree.
+- **Graceful fallback.** If the AI is unavailable, rate-limited or returns malformed output, the app uses keyword rules and says so.
+- **Secure webhooks.** GitHub push payloads are verified with an HMAC-SHA256 signature before any rescan.
+
+## API reference
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/api/jobs/discover` | Read a job posting and extract requirements with source quotes |
+| `GET` | `/api/jobs` | List saved jobs |
+| `PUT` | `/api/jobs/{id}/requirements` | Correct the detected skills |
+| `GET` | `/api/jobs/demo` | Load a sample role |
+| `POST` | `/api/assessments` | Scan a repository and assess it against a job |
+| `GET` | `/api/assessments/latest` | Latest (automatically reassessed) result |
+| `GET` | `/api/assessments/history` | Previous assessments for a job and repository |
+| `GET` | `/api/repositories/resolve` | Validate a repository and get its default branch |
+| `POST` | `/api/repositories/watch` | Start change tracking (polling, optional webhook) |
+| `GET` | `/api/repositories/watch` | Current watch status |
+| `POST` | `/api/webhooks/github` | Signed GitHub push callback |
+| `GET` | `/api/ai/status` | Active AI provider and model |
+
+## Project structure
+
+```
+JobApplication/
+├── src/main/java/com/deven/firstjobapplication/coach/
+│   ├── AiCoach.java                # LLM providers, prompts, structured responses
+│   ├── AssessmentService.java      # Assessment logic, guardrails, reassessment
+│   ├── CareerCoachController.java  # REST API and webhook endpoint
+│   ├── GitHubPortfolioService.java # GitHub scanning and evidence collection
+│   ├── JobDiscoveryService.java    # Posting fetch and requirement extraction
+│   ├── RepositoryMonitor.java      # Scheduled change detection (polling)
+│   ├── SkillMatcher.java           # Keyword rules for candidate evidence
+│   ├── StateStore.java             # H2 / PostgreSQL persistence
+│   └── Models.java, Skill.java     # Domain records and skill taxonomy
+├── src/main/resources/application.properties
+├── src/test/java/...               # Unit and integration tests
+├── frontend/                       # React + Vite dashboard
+└── .env.example                    # Template for local API keys
 ```
 
-Or set it for a single terminal session:
+## Testing
 
 ```powershell
-$env:GROQ_API_KEY = "gsk_..."        # or: $env:GEMINI_API_KEY = "AIza..."
-.\mvnw.cmd spring-boot:run
+.\mvnw.cmd test
 ```
 
-Only one backend can run at a time, because H2 locks `proofpath-data.mv.db`. Stop the IntelliJ run before starting from a terminal, and the other way round.
+The tests cover the full job → assess → watch → reassess flow, persistence across restarts, the AI guardrails (with a mocked model), the fallback to keyword rules, and the HTTP API. The tests use in-memory databases and never call a real AI provider.
 
-Optional overrides: `GROQ_MODEL`, `GEMINI_MODEL`, `ANTHROPIC_MODEL`, and `AI_PROVIDER=groq|gemini|claude` when more than one key is set. Free-tier limits change often, so check your provider console. Groq's free tier allows few tokens per minute, so the app sends it fewer and shorter code excerpts (3 files per skill, about 700 characters each).
+## Limitations
 
-What the AI does:
+- The skill taxonomy is intentionally small: Java, Spring Boot, REST APIs, SQL, PostgreSQL, React, Docker, Testing and Git.
+- Each scan inspects up to 80 relevant files with supported extensions. Larger repositories are reported as partially scanned.
+- Evidence is a signal from code, not a full evaluation of a person's ability.
+- Free AI tiers have rate limits. When a limit is reached, the app uses keyword rules for that scan.
 
-1. **Reading job postings.** The model maps the posting onto the skill taxonomy. For each skill it returns the exact phrase from the posting and whether the skill is required or preferred. A skill whose quote does not appear word for word in the posting is dropped, so every requirement traces back to the source.
-2. **Reviewing repository evidence.** The keyword scanner still picks the candidate files. The model reads the code around each match and decides `DEMONSTRATED`, `PARTIAL` or `NOT_DEMONSTRATED`. Each verdict comes with a confidence level, an explanation, the files it relied on, and a concrete next step. Keyword false positives no longer count, such as "delete" in a comment or `github.com` in a URL.
+## Author
 
-Guardrails in `AssessmentService` keep the AI honest:
-- A skill with no scanned candidate file is always `NOT_DEMONSTRATED`, whatever the model says.
-- A positive verdict that cites no scanned file is downgraded to `PARTIAL` with low confidence.
-- Rejected keyword signals stay visible, so the student can see what was checked.
-- If the provider is unavailable, rate-limited, or returns malformed JSON, the assessment falls back to keyword rules and says so.
+**Deven** · GitHub: [@deven065](https://github.com/deven065)
 
-Groq and Gemini are called through their OpenAI-compatible chat API in JSON mode. Claude uses the official `anthropic-java` SDK with structured outputs and server-side refusal fallback. Every commit on a watched repository triggers a new AI review.
-
-Without a key, the app still runs with keyword rules. `GET /api/ai/status` reports the active provider, and the UI shows a badge.
-
-## GitHub setup
-
-Public repositories use GitHub's REST API directly. The application validates the repository and default branch, reads the commit SHA and recursive tree, fetches immutable Git blobs, and links evidence to the exact GitHub commit.
-
-For private repositories or automatic webhook creation, create a GitHub fine-grained personal access token restricted to your demo repository. Grant **Contents: Read** and **Webhooks: Read and write**. Set it only in the terminal before starting Spring Boot—never commit it:
-
-```powershell
-$env:GITHUB_TOKEN = "your_token_here"
-.\mvnw.cmd spring-boot:run
-```
-
-For a real GitHub push webhook, expose the backend using an HTTPS tunnel or deploy it. Set the public base URL before starting Spring Boot:
-
-```powershell
-$env:GITHUB_WEBHOOK_PUBLIC_BASE_URL = "https://your-public-https-url"
-.\mvnw.cmd spring-boot:run
-```
-
-In React, first assess a repository, then select **Watch changes**. The normal mode checks GitHub every minute. Under **Advanced: GitHub push webhook**, you can enable a `push` webhook at `/api/webhooks/github`. Its HMAC secret is saved locally and verified on delivery. Repeated watch requests reuse an installed webhook.
-
-## Demonstration loop
-
-1. Enter a real job or internship source URL. If the site cannot be fetched, paste the posting text while retaining its source URL. Review and edit the detected skills.
-2. Assess a real GitHub repository; open the evidence links pinned to the scanned SHA.
-3. Select **Watch changes** to track the assessment.
-4. Push a new SQL query file such as `queries/applications.sql` containing `SELECT id FROM applications;`.
-5. GitHub push delivery or polling sees the new SHA. The backend rescans and recomputes every tracked job assessment for that repository.
-6. React refreshes the latest assessment every 10 seconds and shows SQL as `DEMONSTRATED`, citing the changed file and new commit. The results also show scan coverage, next steps for gaps, and previous scans.
-
-## Key APIs
-
-- `POST /api/jobs/discover` — fetches and retains a job source URL and matched requirements.
-- `GET /api/jobs` and `PUT /api/jobs/{id}/requirements` — list saved jobs and correct the detected skills.
-- `POST /api/assessments` — creates a tracked job/repository assessment.
-- `POST /api/repositories/watch` — enables polling and optionally creates a real GitHub webhook.
-- `GET /api/repositories/watch` — restores watch status after reloading the browser.
-- `POST /api/webhooks/github` — verified GitHub push callback.
-- `GET /api/assessments/latest` — current automatically reassessed result for React.
-- `GET /api/assessments/history` — recent assessments for the selected job and repository.
-- `GET /api/ai/status` — whether AI review is enabled, and which provider and model are used.
-
-The scanner considers supported source/configuration files and inspects at most 80 relevant files per scan. The coverage display reports skipped files and partial GitHub trees. Keyword rules choose candidate files and the AI judges them (when configured). Evidence is a code signal, not a complete evaluation of a candidate's ability.
+Built for the **Kurukshetra Hackathon**: AI Career Coach challenge, sponsored by **Worcflow**.
