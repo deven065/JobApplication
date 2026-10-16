@@ -2,6 +2,7 @@ package com.deven.firstjobapplication.coach;
 
 import com.deven.firstjobapplication.coach.Models.*;
 import com.fasterxml.jackson.databind.JsonNode;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import java.time.Instant;
@@ -11,10 +12,9 @@ import java.util.*;
 @Service
 public class GitHubPortfolioService {
     private final RestClient github;
-    public GitHubPortfolioService() {
+    public GitHubPortfolioService(@Value("${github.token:}") String token) {
         RestClient.Builder builder = RestClient.builder().baseUrl("https://api.github.com")
                 .defaultHeader("Accept", "application/vnd.github+json").defaultHeader("User-Agent", "AI-Career-Coach-Demo");
-        String token = System.getenv("GITHUB_TOKEN");
         if (token != null && !token.isBlank()) builder.defaultHeader("Authorization", "Bearer " + token);
         github = builder.build();
     }

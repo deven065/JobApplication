@@ -1,6 +1,7 @@
 import { useState } from 'react'
 
-const API = '/api'
+// Empty in local development: Vite proxies /api to Spring Boot. Set VITE_API_BASE_URL for deployment.
+const API = import.meta.env.VITE_API_BASE_URL || '/api'
 const pretty = value => value.replaceAll('_', ' ')
 
 async function request(path, options) {
