@@ -19,7 +19,7 @@ public class WebConfiguration implements WebMvcConfigurer {
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/api/**")
                 .allowedOrigins(Arrays.stream(frontendOrigin.split(",")).map(String::trim).toArray(String[]::new))
-                .allowedMethods("GET", "POST", "OPTIONS")
+                .allowedMethods("GET", "POST", "PUT", "OPTIONS")
                 .allowedHeaders("Content-Type", "X-GitHub-Event", "X-Hub-Signature-256")
                 .maxAge(3600);
     }

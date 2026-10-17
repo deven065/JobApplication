@@ -63,8 +63,10 @@ public class CareerCoachController {
         RepoRegistration watch = assessments.watch(repository)
                 .orElseThrow(() -> new NoSuchElementException("Repository is not being watched"));
         String revision = assessments.lastScan(repository).map(PortfolioScan::revision).orElse("");
+        String pending = assessments.pendingRevision(repository).orElse(null);
         return new WatchStatus(watch.repository(), watch.branch(), revision,
-                watch.webhookSecret() != null && !watch.webhookSecret().isBlank(), "Watching for repository changes.");
+                watch.webhookSecret() != null && !watch.webhookSecret().isBlank(),
+                pending == null ? "Watching for repository changes." : "New commit detected. Reassessing.", pending);
     }
     @PostMapping("/repositories/watch") @ResponseStatus(HttpStatus.ACCEPTED)
     public WatchStatus watch(@RequestBody WatchRequest body) {
@@ -86,7 +88,7 @@ public class CareerCoachController {
         String message = body.installGitHubWebhook() || alreadyInstalled
                 ? "Watching changes with a GitHub webhook and one-minute polling."
                 : "Watching changes. GitHub will be checked every minute.";
-        return new WatchStatus(repo.fullName(), branch, latest.revision(), body.installGitHubWebhook() || alreadyInstalled, message);
+        return new WatchStatus(repo.fullName(), branch, latest.revision(), body.installGitHubWebhook() || alreadyInstalled, message, null);
     }
     @GetMapping("/repositories/{owner}/{repo}/last-scan") public PortfolioScan lastScan(@PathVariable String owner, @PathVariable String repo) {
         return assessments.lastScan(owner + "/" + repo).orElseThrow(() -> new NoSuchElementException("Repository has not been scanned"));
@@ -108,9 +110,9 @@ public class CareerCoachController {
         if (watch.webhookSecret() == null || watch.webhookSecret().isBlank() || !validSignature(body, signature, watch.webhookSecret()))
             throw new SecurityException("Invalid GitHub webhook signature");
         String pushedBranch = payload.path("ref").asText();
-        if (pushedBranch.equals("refs/heads/" + watch.branch())) assessments.reassessRepository(repo);
+        if (pushedBranch.equals("refs/heads/" + watch.branch())) assessments.reassessRepository(repo, payload.path("after").asText(null));
     }
-    private String blankToDefault(String branch, String defaultBranch) { return branch == null || branch.isBlank() ? defaultBranch : branch; }
+    private String blankToDefault(String branch, String defaultBranch) { return branch == null || branch.isBlank() ? defaultBranch : branch.trim(); }
     private boolean validSignature(byte[] body, String supplied, String secret) throws Exception {
         Mac mac = Mac.getInstance("HmacSHA256"); mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
         String expected = "sha256=" + java.util.HexFormat.of().formatHex(mac.doFinal(body));

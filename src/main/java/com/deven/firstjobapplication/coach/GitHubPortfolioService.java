@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 import java.time.Instant;
 import java.nio.charset.StandardCharsets;
@@ -35,9 +36,9 @@ public class GitHubPortfolioService {
     }
 
     public PortfolioScan scan(String repository, String branch) {
-        String ref = branch == null || branch.isBlank() ? repository(repository).defaultBranch() : branch;
+        String ref = branch == null || branch.isBlank() ? repository(repository).defaultBranch() : branch.trim();
         String[] id = repositoryId(repository);
-        JsonNode commit = json(github.get().uri("/repos/{owner}/{name}/commits/{ref}", id[0], id[1], ref).retrieve().body(String.class));
+        JsonNode commit = commit(repository, id, ref);
         String sha = Objects.requireNonNull(commit).path("sha").asText();
         String treeSha = commit.path("commit").path("tree").path("sha").asText();
         if (sha.isBlank() || treeSha.isBlank()) throw new IllegalStateException("GitHub did not return a complete commit tree.");
@@ -71,7 +72,19 @@ public class GitHubPortfolioService {
     }
     public String latestRevision(String repository, String branch) {
         String[] id = repositoryId(repository);
-        return json(github.get().uri("/repos/{owner}/{name}/commits/{branch}", id[0], id[1], branch).retrieve().body(String.class)).path("sha").asText();
+        return commit(repository, id, branch).path("sha").asText();
+    }
+    /** GitHub answers 422 for a branch that does not exist; turn that into an actionable message. */
+    private JsonNode commit(String repository, String[] id, String ref) {
+        try {
+            return json(github.get().uri("/repos/{owner}/{name}/commits/{ref}", id[0], id[1], ref).retrieve().body(String.class));
+        } catch (HttpClientErrorException error) {
+            if (error.getStatusCode().value() != 422) throw error;
+            String defaultBranch = "";
+            try { defaultBranch = repository(repository).defaultBranch(); } catch (Exception ignored) { /* message below still helps */ }
+            throw new IllegalArgumentException("Branch \"" + ref + "\" was not found in " + repository + "."
+                    + (defaultBranch.isBlank() ? "" : " Leave Branch empty to use the default branch \"" + defaultBranch + "\"."));
+        }
     }
     public boolean canCreateWebhooks() { return !token.isBlank() && publicWebhookBaseUrl.startsWith("https://"); }
     public void createPushWebhook(String repository, String secret) {

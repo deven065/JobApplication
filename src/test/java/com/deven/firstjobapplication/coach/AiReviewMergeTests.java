@@ -70,11 +70,13 @@ class AiReviewMergeTests {
     @Test void aiFailureFallsBackToKeywordRules() {
         AiCoach coach = mock(AiCoach.class);
         when(coach.enabled()).thenReturn(true);
-        when(coach.review(any(), any())).thenThrow(new IllegalStateException("overloaded"));
+        when(coach.review(any(), any())).thenThrow(org.springframework.web.client.HttpClientErrorException.create(
+                org.springframework.http.HttpStatus.UNAUTHORIZED, "Unauthorized", org.springframework.http.HttpHeaders.EMPTY, new byte[0], null));
 
         Assessment result = service(coach).assess(job, "o/r", "");
 
         assertThat(result.assessedBy()).isEqualTo("rules");
+        assertThat(result.summary()).startsWith("AI review unavailable:").contains("rejected the API key").doesNotContain("401 Unauthorized");
         assertThat(result.gaps()).extracting(Gap::status).containsExactly("DEMONSTRATED", "DEMONSTRATED", "DEMONSTRATED", "NOT_DEMONSTRATED");
     }
 }
