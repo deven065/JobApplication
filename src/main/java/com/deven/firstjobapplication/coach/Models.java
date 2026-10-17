@@ -40,6 +40,7 @@ public final class Models {
     }
     public record RepoRegistration(String repository, String branch, String webhookSecret) { }
     public record GitHubRepository(String fullName, String defaultBranch, String htmlUrl, boolean privateRepository) { }
-    public record WatchStatus(String repository, String branch, String revision, boolean webhookCreated, String message) { }
+    /** revision is the last fully assessed commit; pendingRevision is a newly detected commit still being reassessed. */
+    public record WatchStatus(String repository, String branch, String revision, boolean webhookCreated, String message, String pendingRevision) { }
     public record AiStatus(boolean enabled, String provider, String model, String message) { }
 }

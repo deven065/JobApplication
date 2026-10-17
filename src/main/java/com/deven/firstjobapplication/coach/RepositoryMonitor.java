@@ -16,7 +16,7 @@ public class RepositoryMonitor {
             try {
                 String current = github.latestRevision(watch.repository(), watch.branch());
                 String previous = assessments.lastScan(watch.repository()).map(PortfolioScan::revision).orElse("");
-                if (!current.equals(previous)) assessments.reassessRepository(watch.repository());
+                if (!current.equals(previous)) assessments.reassessRepository(watch.repository(), current);
             } catch (Exception ignored) { /* transient GitHub failure: retry next interval */ }
         }
     }

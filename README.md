@@ -24,6 +24,7 @@
 - [Tech stack](#tech-stack)
 - [Getting started](#getting-started)
 - [Configuration](#configuration)
+- [Deployment](#deployment)
 - [Demo walkthrough](#demo-walkthrough)
 - [Trust and traceability](#trust-and-traceability)
 - [API reference](#api-reference)
@@ -168,6 +169,72 @@ Free-tier limits change often. Groq's free tier allows few tokens per minute, so
 | `FRONTEND_ORIGIN` | `http://localhost:5173` | Allowed CORS origin(s) for a deployed frontend |
 
 H2 stores its data in `proofpath-data.mv.db` in the project root. The four tables (`coach_jobs`, `coach_watches`, `coach_assessments`, `coach_history`) are created automatically. To start with an empty database, stop the backend and delete `proofpath-data.mv.db` and `proofpath-data.trace.db`.
+
+### Using PostgreSQL
+
+H2 is the default, so the app runs with no setup. To use PostgreSQL instead, pick one option.
+
+**Option A: everything in Docker (easiest).** `docker-compose.yml` starts the app plus its own PostgreSQL. API keys are read from `.env`.
+
+```bash
+docker compose up --build
+```
+
+The app runs at http://localhost:8081. The database listens on host port 5433 (user `proofpath`, password `proofpath`, database `proofpath`), and its data persists in the `proofpath-db` Docker volume.
+
+**Option B: your own PostgreSQL server.** Create a database, then add the connection to `.env`:
+
+```properties
+DATABASE_URL=jdbc:postgresql://localhost:5432/proofpath
+DATABASE_USERNAME=postgres
+DATABASE_PASSWORD=your_password
+```
+
+Start the backend as usual. The four `coach_*` tables are created automatically on first start. Tests always use in-memory H2, whatever is in `.env`.
+
+## Deployment
+
+The `Dockerfile` builds **one container** that serves the React app and the API from the same URL. CORS stays simple, and the GitHub webhook URL is just your site's URL. The image contains no secrets: keys are supplied at run time, and the container reads the `PORT` variable that hosting platforms set. It runs as a non-root user and fits a 512 MB instance (about 250 MB in use).
+
+### Recommended: Render + Neon (free)
+
+| Piece | Service | Why |
+|---|---|---|
+| App container | [Render](https://render.com) free web service | Builds the `Dockerfile` straight from GitHub, HTTPS included, redeploys on every push |
+| Database | [Neon](https://neon.tech) free PostgreSQL | Data survives redeploys (a container's own disk does not), no expiry on the free plan |
+
+**1. Create the database.** Sign up at Neon, create a project, and copy the connection string from the dashboard. It looks like `postgres://user:password@ep-xxxx.aws.neon.tech/neondb?sslmode=require`. ProofPath accepts this format directly, and `jdbc:postgresql://` URLs work too. The tables are created automatically on first start.
+
+**2. Push the code to GitHub.** Keys must never be committed: they belong in `.env` locally and in Render's settings online. The test suite fails if a key appears in the source.
+
+**3. Deploy on Render.** Use **New → Blueprint** and pick the repository. Render reads `render.yaml` and asks for each value:
+
+| Variable | Value |
+|---|---|
+| `GROQ_API_KEY` | your Groq key |
+| `DATABASE_URL` | the Neon connection string |
+| `GITHUB_TOKEN` | *(optional)* fine-grained token with Contents read. Raises GitHub's limit from 60 to 5,000 requests/hour |
+| `GITHUB_WEBHOOK_PUBLIC_BASE_URL` | *(optional)* your Render URL, e.g. `https://proofpath.onrender.com`. Add it after the first deploy |
+
+The first build takes about 5–8 minutes. Then open `https://<your-service>.onrender.com`; the health check uses `/api/ai/status`. Without the blueprint, choose **New → Web Service**, pick the repository, select **Docker** and the **Free** plan, and add the same variables.
+
+**Free-tier note:** Render's free service sleeps after about 15 minutes without traffic and takes roughly a minute to wake up. While it sleeps, change polling pauses and webhook deliveries can time out. Open the site a couple of minutes before you present. For an always-on host, use [Railway](https://railway.app) (low monthly cost; it also offers PostgreSQL) or [Koyeb](https://www.koyeb.com); both run the same `Dockerfile` with the same variables.
+
+### Run the container yourself
+
+```bash
+docker build -t proofpath .
+```
+
+```bash
+docker run -p 8081:8081 --env-file .env -e DATABASE_URL=jdbc:h2:file:/tmp/proofpath proofpath
+```
+
+The `-e DATABASE_URL=…` override matters when `.env` points at `localhost`, because inside a container `localhost` is the container itself. To run the app together with its own PostgreSQL, use `docker compose up --build` (see [Using PostgreSQL](#using-postgresql)).
+
+### Separate frontend (optional)
+
+A frontend hosted on its own (for example on Vercel) also works. Build it with `VITE_API_BASE_URL=https://your-backend/api`, and set `FRONTEND_ORIGIN` on the backend to the frontend's URL.
 
 ## Demo walkthrough
 

@@ -20,7 +20,18 @@ public class ApiExceptionHandler {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "GitHub repository or branch was not found, or your token cannot access it."));
         if (error.getStatusCode().value() == 401)
             return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of("message", "GitHub rejected the configured token. Check GITHUB_TOKEN and restart the backend."));
-        return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of("message", "GitHub API request failed: " + error.getStatusCode().value()));
+        String detail = githubMessage(body);
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of("message", "GitHub API request failed (" + error.getStatusCode().value() + ")"
+                + (detail.isBlank() ? "." : ": " + detail)));
+    }
+    /** GitHub explains most failures in a JSON "message" (and sometimes "errors") field; pass it on. */
+    private static String githubMessage(String body) {
+        try {
+            com.fasterxml.jackson.databind.JsonNode node = new com.fasterxml.jackson.databind.ObjectMapper().readTree(body);
+            String message = node.path("message").asText("");
+            String first = node.path("errors").path(0).path("message").asText("");
+            return first.isBlank() ? message : message + " (" + first + ")";
+        } catch (Exception ignored) { return ""; }
     }
 
     @ExceptionHandler({IllegalArgumentException.class, IllegalStateException.class})

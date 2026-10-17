@@ -1,0 +1,36 @@
+# Runs ProofPath with its own PostgreSQL database:  docker compose up --build
+# API keys are read from .env (GROQ_API_KEY, GITHUB_TOKEN, ...). The app is served at http://localhost:8081
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: proofpath
+      POSTGRES_USER: proofpath
+      POSTGRES_PASSWORD: ${COMPOSE_DB_PASSWORD:-proofpath}
+    ports:
+      - "5433:5432"   # 5433 on the host so it does not clash with another local PostgreSQL
+    volumes:
+      - proofpath-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U proofpath -d proofpath"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: jdbc:postgresql://db:5432/proofpath
+      DATABASE_USERNAME: proofpath
+      DATABASE_PASSWORD: ${COMPOSE_DB_PASSWORD:-proofpath}
+    ports:
+      - "8081:8081"
+
+volumes:
+  proofpath-db:

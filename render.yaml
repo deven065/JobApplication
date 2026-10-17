@@ -1,0 +1,19 @@
+# Render Blueprint: Render -> New -> Blueprint -> pick this repository.
+# Builds the Dockerfile and asks for each secret (sync: false) in the dashboard; nothing secret is stored here.
+services:
+  - type: web
+    name: proofpath
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/ai/status
+    autoDeploy: true
+    envVars:
+      - key: GROQ_API_KEY
+        sync: false
+      - key: DATABASE_URL          # e.g. Neon: postgres://user:pass@host/db?sslmode=require (jdbc: URLs work too)
+        sync: false
+      - key: GITHUB_TOKEN          # optional, raises the GitHub API limit from 60 to 5,000 requests/hour
+        sync: false
+      - key: GITHUB_WEBHOOK_PUBLIC_BASE_URL   # optional, set to this service's https://….onrender.com URL
+        sync: false
