@@ -269,10 +269,6 @@ export default function App() {
     setJob(next); setSelectedSkills(next.requiredSkills); setAssessment(null); setHistory([]); setWatching(false); setJustUpdated(false); setPending(null)
     localStorage.setItem('proofpath.jobId', next.id)
   }
-  async function loadDemo() {
-    try { chooseJob(await request('/jobs/demo')); say('Demo role loaded. Use a real employer posting for a personal assessment.') }
-    catch (error) { fail(error) }
-  }
   async function searchBoard(event) {
     event.preventDefault(); setBusy('Searching the job board…')
     try {
@@ -417,7 +413,7 @@ export default function App() {
           <label>Job posting URL<input required type="url" value={source.sourceUrl} onChange={event => setSource({ ...source, sourceUrl: event.target.value })} placeholder="https://careers.example.com/job" /></label>
           <label>Posting text{site?.needsText ? '' : ' (optional)'}<textarea required={!!site?.needsText} value={source.postingText} onChange={event => setSource({ ...source, postingText: event.target.value })} placeholder={site?.needsText ? `Copy the full job description from ${site.label} and paste it here.` : 'If the website blocks fetching, paste the job description here.'} rows="4" /></label>
           {site && <p className="muted small hintLine">{site.needsText ? <>{site.label} link: {site.label} blocks automated reading, so paste the description. The <strong>link is kept</strong> as the source.</> : <>{site.label} job link: read through {site.label}'s official job-board API.</>}</p>}
-          <div className="buttons"><m.button className="primary" disabled={!!busy} whileHover={{ y: -2 }} whileTap={{ scale: 0.96 }} transition={spring}>Read job posting</m.button><button className="ghost" type="button" onClick={loadDemo}>Try the demo role</button></div>
+          <div className="buttons"><m.button className="primary" disabled={!!busy} whileHover={{ y: -2 }} whileTap={{ scale: 0.96 }} transition={spring}>Read job posting</m.button></div>
         </form>
         <details className="advanced boardSearch"><summary>Or search a public job board (Greenhouse, Lever, Ashby)</summary>
           <form onSubmit={searchBoard}>
