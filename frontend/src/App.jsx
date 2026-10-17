@@ -446,7 +446,7 @@ export default function App() {
           <m.button className={`secondary big ${watching ? 'isLive' : ''}`} type="button" onClick={watch} disabled={!!busy || !assessment} whileHover={{ y: -2 }} whileTap={{ scale: 0.96 }} transition={spring}>{watching ? <><i className="dot" />Watching changes</> : <><Icon name="eye" size={18} />Watch changes</>}</m.button>
         </div>
         {watching && <p className="muted small">Polling GitHub every minute{installWebhook ? ' and listening for push webhooks' : ''}. This page checks for updates every few seconds.</p>}
-        <details className="advanced"><summary>Advanced: GitHub push webhook</summary><p className="muted small">Polling is enough for the demo. A webhook updates faster when the backend has a public HTTPS URL and a GitHub token.</p><label className="checkRow"><input type="checkbox" checked={installWebhook} onChange={event => setInstallWebhook(event.target.checked)} />Install a GitHub webhook</label></details>
+        <details className="advanced"><summary>Advanced: GitHub push webhook</summary><label className="checkRow"><input type="checkbox" checked={installWebhook} onChange={event => setInstallWebhook(event.target.checked)} />Install a GitHub webhook</label></details>
       </m.article>
     </m.section>
 
