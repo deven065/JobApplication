@@ -33,11 +33,27 @@ public final class Models {
             this(skill, status, explanation, evidence, null, null, "rules");
         }
     }
-    public record Assessment(JobRequirement job, PortfolioScan portfolio, List<Gap> gaps, String summary, String assessedBy) {
+    /** change is null for a first assessment; otherwise it records what the commit changed and which skills were re-run. */
+    public record Assessment(JobRequirement job, PortfolioScan portfolio, List<Gap> gaps, String summary, String assessedBy, ChangeSet change) {
+        public Assessment(JobRequirement job, PortfolioScan portfolio, List<Gap> gaps, String summary, String assessedBy) {
+            this(job, portfolio, gaps, summary, assessedBy, null);
+        }
         public Assessment(JobRequirement job, PortfolioScan portfolio, List<Gap> gaps) {
-            this(job, portfolio, gaps, null, "rules");
+            this(job, portfolio, gaps, null, "rules", null);
         }
     }
+    /** One file touched between two scanned commits. previousPath is set for renames. */
+    public record ChangedFile(String path, String status, String url, String previousPath) { }
+    /**
+     * The difference between the previous and the new scanned commit. Only skills whose evidence or candidate files
+     * changed are re-evaluated; the rest keep their verdicts. complete=false means GitHub could not list every change,
+     * so every skill was re-evaluated.
+     */
+    public record ChangeSet(String baseRevision, String headRevision, List<ChangedFile> files,
+                            List<Skill> reassessedSkills, List<Skill> carriedOverSkills, boolean complete) { }
+    /** A posting listed on a public job board (Greenhouse, Lever or Ashby). */
+    public record JobListing(String source, String board, String id, String title, String company, String location, String url) { }
+    public record JobBoardResults(String source, String board, String company, int total, List<JobListing> jobs) { }
     public record RepoRegistration(String repository, String branch, String webhookSecret) { }
     public record GitHubRepository(String fullName, String defaultBranch, String htmlUrl, boolean privateRepository) { }
     /** revision is the last fully assessed commit; pendingRevision is a newly detected commit still being reassessed. */

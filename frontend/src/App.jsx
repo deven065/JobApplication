@@ -21,7 +21,7 @@ const STATUS = {
   NOT_DEMONSTRATED: { tone: 'gap', label: 'Not shown in this scan' }
 }
 const loadFeatures = () => import('./motionFeatures.js').then(module => module.default)
-const LOOP = ['Job requirements', 'Repository evidence', 'Gaps explained', 'Code change']
+const LOOP = ['Job requirements', 'Repository evidence', 'Gaps explained', 'Code change', 'Updated assessment']
 const pretty = value => value.replaceAll('_', ' ')
 const statusOf = gap => STATUS[gap.status] || STATUS.NOT_DEMONSTRATED
 const byAi = value => !!value && value !== 'rules'
@@ -30,6 +30,71 @@ const shortSha = sha => sha?.slice(0, 7)
 const sameSkills = (left, right) => left.length === right.length && left.every(skill => right.includes(skill))
 const historyPath = (jobId, repository) => `/assessments/history?jobId=${encodeURIComponent(jobId)}&repository=${encodeURIComponent(repository)}`
 const latestPath = (jobId, repository) => `/assessments/latest?jobId=${encodeURIComponent(jobId)}&repository=${encodeURIComponent(repository)}`
+const BOARDS = [['GREENHOUSE', 'Greenhouse', 'stripe'], ['LEVER', 'Lever', 'palantir'], ['ASHBY', 'Ashby', 'notion']]
+const hostOf = url => { try { return new URL(url).hostname.toLowerCase() } catch { return '' } }
+/** Recognises the job site from a posting link: some must be pasted, job-board links are read through their API. */
+function detectSite(url) {
+  const host = hostOf(url)
+  if (!host) return null
+  if (/(^|\.)linkedin\.com$|^lnkd\.in$/.test(host)) return { label: 'LinkedIn', needsText: true }
+  if (/(^|\.)indeed\.[a-z.]+$/.test(host)) return { label: 'Indeed', needsText: true }
+  if (/(^|\.)naukri\.com$/.test(host)) return { label: 'Naukri', needsText: true }
+  if (/(^|\.)glassdoor\.[a-z.]+$/.test(host)) return { label: 'Glassdoor', needsText: true }
+  if (/(^|\.)greenhouse\.io$/.test(host)) return { label: 'Greenhouse', api: true }
+  if (/^jobs(\.eu)?\.lever\.co$/.test(host)) return { label: 'Lever', api: true }
+  if (host === 'jobs.ashbyhq.com') return { label: 'Ashby', api: true }
+  return null
+}
+const STATUS_TEXT = { DEMONSTRATED: 'Demonstrated', PARTIAL: 'Partial', NOT_DEMONSTRATED: 'Not demonstrated in this scan' }
+const md = value => String(value ?? '').replace(/\|/g, '\\|').replace(/\s+/g, ' ').trim()
+
+/** Builds the hackathon's "demo evidence" as Markdown: job source, repository evidence, gaps, the change and the revised assessment. */
+function evidenceReport(assessment, history) {
+  const { job, portfolio, gaps, change } = assessment
+  const earlier = history.find(item => item.portfolio.revision !== portfolio.revision)
+  const lines = []
+  lines.push('# ProofPath evidence report', '')
+  lines.push(`Generated ${new Date().toLocaleString()} · ${byAi(assessment.assessedBy) ? `AI reviewed (${aiName(assessment.assessedBy)})` : 'keyword rules'}`, '')
+  lines.push('## 1. Job source', '')
+  lines.push(`- **Role:** ${md(job.title)} at ${md(job.company)}`, `- **Source:** ${job.sourceUrl}`, `- **Requirements:** ${job.requiredSkills.map(pretty).join(', ')}`)
+  for (const quote of job.requirementQuotes || []) lines.push(`  - ${pretty(quote.skill)} (${quote.importance.toLowerCase()}): “${md(quote.quote)}”`)
+  lines.push('', '## 2. Repository evidence', '')
+  lines.push(`- **Repository:** https://github.com/${portfolio.repository} (branch \`${portfolio.branch}\`)`)
+  lines.push(`- **Commit:** [${shortSha(portfolio.revision)}](https://github.com/${portfolio.repository}/commit/${portfolio.revision}) scanned ${new Date(portfolio.scannedAt).toLocaleString()}`)
+  lines.push(`- **Coverage:** ${portfolio.scannedFiles} files read${portfolio.skippedFiles ? `, ${portfolio.skippedFiles} skipped` : ''}${portfolio.treeTruncated ? ', partial tree' : ''}`)
+  lines.push('', '## 3. Gaps', '', `Role readiness: **${readiness(gaps)}%**`, '', '| Skill | Verdict | Confidence | Evidence | Next step |', '|---|---|---|---|---|')
+  for (const gap of gaps) {
+    const evidence = gap.status === 'NOT_DEMONSTRATED' ? '—' : gap.evidence.map(e => `[${md(e.path)}](${e.url})`).join('<br>') || '—'
+    lines.push(`| ${pretty(gap.skill)} | ${STATUS_TEXT[gap.status] || gap.status} | ${gap.confidence ? gap.confidence.toLowerCase() : '—'} | ${evidence} | ${gap.status === 'DEMONSTRATED' ? '—' : md(gap.nextStep || NEXT[gap.skill])} |`)
+  }
+  if (assessment.summary && byAi(assessment.assessedBy)) lines.push('', `> ${md(assessment.summary)}`)
+  if (change) {
+    lines.push('', '## 4. Repository change', '')
+    lines.push(`Commit [${shortSha(change.baseRevision)}](https://github.com/${portfolio.repository}/commit/${change.baseRevision}) → [${shortSha(change.headRevision)}](https://github.com/${portfolio.repository}/commit/${change.headRevision}) · [compare](https://github.com/${portfolio.repository}/compare/${change.baseRevision}...${change.headRevision})`, '')
+    for (const file of change.files) lines.push(`- \`${file.status}\` [${md(file.path)}](${file.url})`)
+    lines.push('', `- **Reassessed skills:** ${change.reassessedSkills.length ? change.reassessedSkills.map(pretty).join(', ') : 'none (no evidence files changed)'}`)
+    lines.push(`- **Unchanged, carried over:** ${change.carriedOverSkills.length ? change.carriedOverSkills.map(pretty).join(', ') : 'none'}`)
+    if (!change.complete) lines.push('- GitHub could not list every change, so every skill was reassessed.')
+  }
+  if (earlier) {
+    lines.push('', '## 5. Revised assessment', '', `| Skill | Before (${shortSha(earlier.portfolio.revision)}) | After (${shortSha(portfolio.revision)}) |`, '|---|---|---|')
+    for (const gap of gaps) {
+      const before = earlier.gaps.find(old => old.skill === gap.skill)
+      lines.push(`| ${pretty(gap.skill)} | ${STATUS_TEXT[before?.status] || '—'} | ${STATUS_TEXT[gap.status] || gap.status}${before && before.status !== gap.status ? ' ✅' : ''} |`)
+    }
+    lines.push('', `Readiness: ${readiness(earlier.gaps)}% → **${readiness(gaps)}%**`)
+  }
+  lines.push('', '---', '', '_A missing signal means "not demonstrated in this scope", not proof that the student lacks the skill._', '')
+  return lines.join('\n')
+}
+
+function download(name, text) {
+  const url = URL.createObjectURL(new Blob([text], { type: 'text/markdown;charset=utf-8' }))
+  const link = Object.assign(document.createElement('a'), { href: url, download: name })
+  document.body.appendChild(link); link.click(); link.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
 const readiness = gaps => gaps.length ? Math.round(100 * gaps.reduce((sum, gap) => sum + (gap.status === 'DEMONSTRATED' ? 1 : gap.status === 'PARTIAL' ? 0.5 : 0), 0) / gaps.length) : 0
 
 async function request(path, options) {
@@ -84,7 +149,7 @@ function Confidence({ level }) {
     <m.i key={bar} className={bar <= filled ? 'on' : ''} initial={{ scaleY: 0 }} animate={{ scaleY: 1 }} transition={{ delay: 0.35 + bar * 0.08, ...spring }} />)}<em>{level.toLowerCase()}</em></span>
 }
 
-const SkillCard = forwardRef(function SkillCard({ gap, change }, ref) {
+const SkillCard = forwardRef(function SkillCard({ gap, change, recheck, changedPaths }, ref) {
   const status = statusOf(gap)
   const rejected = gap.status === 'NOT_DEMONSTRATED' && gap.evidence.length > 0
   return <m.article ref={ref} layout variants={cardIn} initial="hidden" animate="show" exit="exit" whileHover={{ y: -5 }} transition={spring}
@@ -93,7 +158,7 @@ const SkillCard = forwardRef(function SkillCard({ gap, change }, ref) {
       <m.span className="skillIcon" initial={{ scale: 0, rotate: -30 }} animate={{ scale: 1, rotate: 0 }} transition={{ delay: 0.2, ...spring }}>
         <Icon name={gap.status === 'DEMONSTRATED' ? 'check' : gap.status === 'PARTIAL' ? 'half' : 'minus'} />
       </m.span>
-      <div><h3>{pretty(gap.skill)}</h3><span className="chip">{status.label}</span>{change && <m.span className="chip chip-new" initial={{ scale: 0 }} animate={{ scale: [0, 1.25, 1] }} transition={{ delay: 0.5, duration: 0.5 }}>{change}</m.span>}</div>
+      <div><h3>{pretty(gap.skill)}</h3><span className="chip">{status.label}</span>{change && <m.span className="chip chip-new" initial={{ scale: 0 }} animate={{ scale: [0, 1.25, 1] }} transition={{ delay: 0.5, duration: 0.5 }}>{change}</m.span>}{recheck && <span className={`chip chip-${recheck}`} title={recheck === 'rechecked' ? 'A file behind this skill changed, so it was reassessed' : 'No file behind this skill changed, so its verdict was kept'}>{recheck === 'rechecked' ? 'Re-checked' : 'Unchanged'}</span>}</div>
       <Confidence level={gap.confidence} />
     </header>
     <p className="explain">{gap.explanation}</p>
@@ -101,7 +166,7 @@ const SkillCard = forwardRef(function SkillCard({ gap, change }, ref) {
     {gap.evidence.length > 0 && <details className="evidenceList" open={gap.status !== 'NOT_DEMONSTRATED'}>
       <summary>{rejected ? `${gap.evidence.length} keyword signal${gap.evidence.length > 1 ? 's' : ''} reviewed, not accepted` : `${gap.evidence.length} cited file${gap.evidence.length > 1 ? 's' : ''}`}</summary>
       {gap.evidence.map(evidence => <div className="evidence" key={evidence.url}>
-        <a href={evidence.url} target="_blank" rel="noreferrer"><Icon name="file" size={14} /><span>{evidence.path}</span></a>
+        <a href={evidence.url} target="_blank" rel="noreferrer"><Icon name="file" size={14} /><span>{evidence.path}</span>{changedPaths?.has(evidence.path) && <em className="changedTag">changed in this commit</em>}</a>
         {evidence.snippet && <code>{evidence.snippet}</code>}
       </div>)}
     </details>}
@@ -129,6 +194,8 @@ export default function App() {
   const [installWebhook, setInstallWebhook] = useState(false)
   const [message, setMessage] = useState({ text: 'Choose a job posting and a GitHub repository to begin.', tone: 'info' })
   const [source, setSource] = useState({ title: '', company: '', sourceUrl: '', postingText: '' })
+  const [boardQuery, setBoardQuery] = useState({ source: 'GREENHOUSE', board: '', q: '' })
+  const [boardResults, setBoardResults] = useState(null)
   const [ai, setAi] = useState(null)
   const [filter, setFilter] = useState('ALL')
   const [justUpdated, setJustUpdated] = useState(false)
@@ -206,11 +273,31 @@ export default function App() {
     try { chooseJob(await request('/jobs/demo')); say('Demo role loaded. Use a real employer posting for a personal assessment.') }
     catch (error) { fail(error) }
   }
+  async function searchBoard(event) {
+    event.preventDefault(); setBusy('Searching the job board…')
+    try {
+      const params = new URLSearchParams({ source: boardQuery.source, board: boardQuery.board.trim(), q: boardQuery.q.trim() })
+      const found = await request(`/jobs/boards?${params}`)
+      setBoardResults(found)
+      say(found.total ? `${found.total} open posting${found.total > 1 ? 's' : ''} at ${found.company}${found.total > found.jobs.length ? `; showing the first ${found.jobs.length}` : ''}. Pick one to import.` : `No postings at ${found.company} match "${boardQuery.q}".`, found.total ? 'success' : 'warn')
+    } catch (error) { setBoardResults(null); fail(error) } finally { setBusy('') }
+  }
+  async function importPosting(listing) {
+    setBusy(`Reading "${listing.title}" from ${listing.company}…`)
+    try {
+      const found = await request('/jobs/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ source: listing.source, board: listing.board, jobId: listing.id }) })
+      chooseJob(found); setSavedJobs(items => [found, ...items])
+      say(`Imported from ${found.company}'s job board with its source link. Found ${found.requiredSkills.length} requirement${found.requiredSkills.length === 1 ? '' : 's'}.`, 'success')
+    } catch (error) { fail(error) } finally { setBusy('') }
+  }
   async function discoverJob(event) {
-    event.preventDefault(); setBusy('Reading the job posting…')
+    event.preventDefault()
+    const site = detectSite(source.sourceUrl)
+    if (site?.needsText && !source.postingText.trim()) return say(`${site.label} doesn't allow automated reading, so copy the job description into Posting text. The link is still saved as the source.`, 'warn')
+    setBusy('Reading the job posting…')
     try {
       const found = await request('/jobs/discover', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(source) })
-      chooseJob(found); setSavedJobs(items => [found, ...items]); say(`Found ${found.requiredSkills.length} requirements. Review them, then assess a repository.`, 'success')
+      chooseJob(found); setSavedJobs(items => [found, ...items]); say(`Found ${found.requiredSkills.length} requirement${found.requiredSkills.length === 1 ? '' : 's'}. Review them, then assess a repository.`, 'success')
     } catch (error) { fail(error) } finally { setBusy('') }
   }
   async function saveRequirements() {
@@ -262,18 +349,22 @@ export default function App() {
     if (before && before !== gap.status) changes[gap.skill] = before === 'DEMONSTRATED' ? 'Changed' : 'Improved'
   })
   const improved = gaps.filter(gap => changes[gap.skill] === 'Improved')
+  const change = isLatest ? assessment?.change : null
+  const changedPaths = new Set((change?.files || []).map(file => file.path))
+  const recheckOf = skill => !change ? null : change.reassessedSkills.includes(skill) ? 'rechecked' : 'unchanged'
   const visible = gaps.filter(gap => filter === 'ALL' || (filter === 'GAPS' ? gap.status !== 'DEMONSTRATED' : gap.status === 'DEMONSTRATED'))
   const coverage = assessment?.portfolio
   // Each step is done when its evidence exists; the current step is the first one not done yet.
   const codeChanged = !!earlier && !!isLatest
   const reassessing = !!pending && pending !== assessment?.portfolio.revision
-  const doneSteps = [!!job, !!assessment, !!assessment, codeChanged && !reassessing]
+  const doneSteps = [!!job, !!assessment, !!assessment, codeChanged || reassessing, codeChanged && !reassessing]
   const firstOpen = doneSteps.indexOf(false)
   // When the loop has just completed, keep the highlight on "Updated assessment" so the finish is visible.
   const stage = firstOpen !== -1 ? firstOpen : justUpdated ? LOOP.length - 1 : LOOP.length
-  const stepTargets = ['role-card', 'repo-card', 'results', codeChanged ? 'results' : 'close-loop']
+  const stepTargets = ['role-card', 'repo-card', 'results', codeChanged ? 'results' : 'close-loop', 'results']
   const goTo = index => document.getElementById(stepTargets[index])?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   const firstGap = gaps.find(gap => gap.status !== 'DEMONSTRATED')
+  const site = detectSite(source.sourceUrl)
   const quotes = Object.fromEntries((job?.requirementQuotes || []).map(item => [item.skill, item]))
 
   const assessing = busy.startsWith('Scanning')
@@ -302,9 +393,10 @@ export default function App() {
           <button type="button" onClick={() => goTo(index)} disabled={index > stage} title={index > stage ? 'Finish the earlier steps first' : `Go to: ${step}`}>
             {index === stage && <m.i className="loopActive" layoutId="loopActive" transition={spring} />}
             <span className="loopNo">{doneSteps[index] ? <Icon name="check" size={14} /> : index + 1}</span>{step}
-            {index === 3 && reassessing && <em className="loopHint"><i className="spinner tiny" /><code>{shortSha(pending)}</code> reassessing…</em>}
-            {index === 3 && !reassessing && !doneSteps[3] && index === stage && <em className="loopHint">{watching ? <><i className="dot" />waiting for a push</> : 'push a commit'}</em>}
-            {index === 3 && !reassessing && doneSteps[3] && justUpdated && <em className="loopHint">assessment updated</em>}
+            {index === 3 && !doneSteps[3] && index === stage && <em className="loopHint">{watching ? <><i className="dot" />waiting for a push</> : 'push a commit'}</em>}
+            {index === 3 && reassessing && <em className="loopHint"><code>{shortSha(pending)}</code> detected</em>}
+            {index === 4 && reassessing && <em className="loopHint"><i className="spinner tiny" />reassessing…</em>}
+            {index === 4 && !reassessing && doneSteps[4] && justUpdated && <em className="loopHint">new results below</em>}
           </button>
         </m.li>)}
       </m.ol>
@@ -323,9 +415,22 @@ export default function App() {
         <form onSubmit={discoverJob}>
           <div className="row"><label>Role<input required value={source.title} onChange={event => setSource({ ...source, title: event.target.value })} placeholder="Backend Engineer Intern" /></label><label>Company<input required value={source.company} onChange={event => setSource({ ...source, company: event.target.value })} placeholder="Company name" /></label></div>
           <label>Job posting URL<input required type="url" value={source.sourceUrl} onChange={event => setSource({ ...source, sourceUrl: event.target.value })} placeholder="https://careers.example.com/job" /></label>
-          <label>Posting text<textarea value={source.postingText} onChange={event => setSource({ ...source, postingText: event.target.value })} placeholder="If the website blocks fetching, paste the job description here." rows="4" /></label>
+          <label>Posting text{site?.needsText ? '' : ' (optional)'}<textarea required={!!site?.needsText} value={source.postingText} onChange={event => setSource({ ...source, postingText: event.target.value })} placeholder={site?.needsText ? `Copy the full job description from ${site.label} and paste it here.` : 'If the website blocks fetching, paste the job description here.'} rows="4" /></label>
+          {site && <p className="muted small hintLine">{site.needsText ? <>{site.label} link: {site.label} blocks automated reading, so paste the description. The <strong>link is kept</strong> as the source.</> : <>{site.label} job link: read through {site.label}'s official job-board API.</>}</p>}
           <div className="buttons"><m.button className="primary" disabled={!!busy} whileHover={{ y: -2 }} whileTap={{ scale: 0.96 }} transition={spring}>Read job posting</m.button><button className="ghost" type="button" onClick={loadDemo}>Try the demo role</button></div>
         </form>
+        <details className="advanced boardSearch"><summary>Or search a public job board (Greenhouse, Lever, Ashby)</summary>
+          <form onSubmit={searchBoard}>
+            <div className="row"><label>Job board<select value={boardQuery.source} onChange={event => { setBoardQuery({ ...boardQuery, source: event.target.value }); setBoardResults(null) }}>{BOARDS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+              <label>Company board name<input required value={boardQuery.board} onChange={event => setBoardQuery({ ...boardQuery, board: event.target.value })} placeholder={`e.g. ${BOARDS.find(item => item[0] === boardQuery.source)[2]}`} /></label></div>
+            <label>Keyword (optional)<input value={boardQuery.q} onChange={event => setBoardQuery({ ...boardQuery, q: event.target.value })} placeholder="engineer, intern…" /></label>
+            <div className="buttons"><button className="secondary" disabled={!!busy}>Search postings</button></div>
+          </form>
+          {boardResults?.jobs?.length > 0 && <m.ul className="boardResults" variants={stagger(0.03)} initial="hidden" animate="show">{boardResults.jobs.map(listing =>
+            <m.li key={listing.id} variants={fadeUp}><div><strong>{listing.title}</strong><span>{listing.company}{listing.location ? ` · ${listing.location}` : ''}</span></div>
+              <a href={listing.url} target="_blank" rel="noreferrer" title="Open the original posting"><Icon name="link" size={14} /></a>
+              <button type="button" className="secondary" disabled={!!busy} onClick={() => importPosting(listing)}>Import</button></m.li>)}</m.ul>}
+        </details>
         <AnimatePresence mode="wait">{job && <m.div key={job.id} className="jobBox" initial={{ opacity: 0, y: 14, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.35, ease }}>
           <div className="jobTitle"><div><strong>{job.title}</strong><span>{job.company}</span></div><a href={job.sourceUrl} target="_blank" rel="noreferrer">Source <Icon name="link" size={14} /></a></div>
           <p className="muted">{byAi(job.extractedBy) ? <>Requirements read by AI ({aiName(job.extractedBy)}). Each one quotes the posting.</> : 'Requirements matched by keyword rules.'} Click a skill to include or exclude it.</p>
@@ -358,7 +463,7 @@ export default function App() {
             : <>
               <Confetti key={assessment.portfolio.revision} />
               <m.span key={`icon-${assessment.portfolio.revision}`} className="bannerIcon" initial={{ scale: 0.4 }} animate={{ scale: 1, rotate: [0, -12, 12, -6, 0] }} transition={{ duration: 0.8 }}><Icon name="bolt" size={20} /></m.span>
-              <div><strong>Reassessed automatically after commit {shortSha(assessment.portfolio.revision)}</strong><span>{improved.length ? `${improved.map(gap => pretty(gap.skill)).join(', ')} improved. Evidence now cites the changed files.` : 'No requirement changed status in this commit.'}</span></div>
+              <div><strong>Reassessed automatically after commit {shortSha(assessment.portfolio.revision)}</strong><span>{change ? `${change.files.length} file${change.files.length === 1 ? '' : 's'} changed; ${change.reassessedSkills.length ? `re-checked ${change.reassessedSkills.map(pretty).join(', ')}` : 'no skill evidence was touched'}. ` : ''}{improved.length ? `${improved.map(gap => pretty(gap.skill)).join(', ')} improved and now cite${improved.length === 1 ? 's' : ''} the changed files.` : 'No requirement changed status in this commit.'}</span></div>
             </>}
         </m.div>}
 
@@ -376,8 +481,20 @@ export default function App() {
               <span className="metaItem"><Icon name="file" size={15} />{coverage.scannedFiles} files read{coverage.skippedFiles > 0 ? `, ${coverage.skippedFiles} skipped` : ''}{coverage.treeTruncated ? ', partial tree' : ''}</span>
               <span className="metaItem"><Icon name="spark" size={15} />{byAi(assessment.assessedBy) ? `AI reviewed · ${aiName(assessment.assessedBy)}` : 'Keyword rules'}</span>
             </div>
+            <button type="button" className="secondary reportButton" onClick={() => download(`proofpath-evidence-${assessment.portfolio.repository.replace('/', '-')}-${shortSha(assessment.portfolio.revision)}.md`, evidenceReport(assessment, history))}><Icon name="file" size={15} />Download evidence report</button>
           </div>
         </m.div>
+
+        {change && <m.div className="changePanel card" variants={cardIn}>
+          <div className="changeHead"><span className="summaryIcon"><Icon name="commit" size={18} /></span><div><h3>What changed in this commit</h3>
+            <p className="muted small"><a href={`https://github.com/${coverage.repository}/compare/${change.baseRevision}...${change.headRevision}`} target="_blank" rel="noreferrer"><code>{shortSha(change.baseRevision)}</code> → <code>{shortSha(change.headRevision)}</code></a> · only skills whose files changed were reassessed</p></div></div>
+          <div className="changeGrid">
+            <div><p className="label">Changed files ({change.files.length})</p><ul className="changedFiles">{change.files.slice(0, 12).map(file => <li key={file.path}><span className={`fileStatus st-${file.status}`}>{file.status}</span><a href={file.url} target="_blank" rel="noreferrer">{file.path}</a></li>)}{change.files.length > 12 && <li className="muted small">and {change.files.length - 12} more</li>}{change.files.length === 0 && <li className="muted small">GitHub listed no file changes.</li>}</ul></div>
+            <div><p className="label">Re-checked</p><div className="skillChips">{change.reassessedSkills.length ? change.reassessedSkills.map(skill => <span key={skill} className="chip chip-rechecked">{pretty(skill)}</span>) : <span className="muted small">None: no evidence files changed</span>}</div>
+              <p className="label">Unchanged, carried over</p><div className="skillChips">{change.carriedOverSkills.length ? change.carriedOverSkills.map(skill => <span key={skill} className="chip chip-unchanged">{pretty(skill)}</span>) : <span className="muted small">None</span>}</div>
+              {!change.complete && <p className="muted small">GitHub could not list every change, so every skill was reassessed.</p>}</div>
+          </div>
+        </m.div>}
 
         {assessment.summary && byAi(assessment.assessedBy) && <m.div className="summary card" variants={cardIn}><m.span className="summaryIcon" animate={{ rotate: [0, 14, -10, 0], scale: [1, 1.12, 1] }} transition={{ duration: 2.4, repeat: Infinity, repeatDelay: 3 }}><Icon name="spark" size={18} /></m.span><div><h3>Coach summary</h3><p>{assessment.summary}</p></div></m.div>}
 
@@ -397,7 +514,7 @@ export default function App() {
         </m.div>
         <m.p className="muted small disclaimer" variants={fadeUp}>A missing signal means only that this scan did not find evidence, not that you lack the skill. Every positive verdict cites a file at the scanned commit.</m.p>
         <m.div className="skills" layout variants={stagger(0.07)}>
-          <AnimatePresence mode="popLayout">{visible.map(gap => <SkillCard key={gap.skill} gap={gap} change={changes[gap.skill]} />)}</AnimatePresence>
+          <AnimatePresence mode="popLayout">{visible.map(gap => <SkillCard key={gap.skill} gap={gap} change={changes[gap.skill]} recheck={recheckOf(gap.skill)} changedPaths={changedPaths} />)}</AnimatePresence>
         </m.div>
         {visible.length === 0 && <p className="muted empty">Nothing in this view.</p>}
 

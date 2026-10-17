@@ -36,9 +36,15 @@ public class JobDiscoveryService {
             throw new IllegalArgumentException("Enter a public HTTP or HTTPS job URL.");
         if (pastedText != null && pastedText.length() > 100_000)
             throw new IllegalArgumentException("Job posting text is too long. Paste at most 100,000 characters.");
+        String blockingSite = blocksAutomatedReading(uri.getHost());
+        if ((pastedText == null || pastedText.isBlank()) && blockingSite != null)
+            // These sites answer automated requests with sign-in or bot-check pages, which must never be read as a posting.
+            throw new IllegalArgumentException(blockingSite + " doesn't allow automated reading of job pages. Copy the job description from the posting into Posting text; the link is still saved as the source.");
         String html = pastedText == null || pastedText.isBlank() ? fetch(uri) : pastedText;
-        String text = html.replaceAll("(?is)<script.*?</script>|<style.*?</style>|<[^>]+>", " ")
-                .replaceAll("\\s+", " ").trim();
+        // Decode entities (&amp;, &nbsp; ...) after stripping tags, so quotes read naturally and match the posting text.
+        String text = org.springframework.web.util.HtmlUtils.htmlUnescape(
+                        html.replaceAll("(?is)<script.*?</script>|<style.*?</style>|<[^>]+>", " "))
+                .replace(' ', ' ').replaceAll("\\s+", " ").trim();
         if (text.isBlank()) throw new IllegalArgumentException("No readable job text was found. Paste the posting text and try again.");
         String excerpt = text.length() > 900 ? text.substring(0, 900) + "..." : text;
         if (coach.enabled()) {
@@ -51,6 +57,16 @@ public class JobDiscoveryService {
         }
         List<Skill> skills = SkillMatcher.skillsIn(text);
         return new JobRequirement(UUID.randomUUID().toString(), title, company, sourceUrl, excerpt, skills, Instant.now());
+    }
+
+    /** Job sites without a public API that block automated reading; their postings are pasted, with the link kept. */
+    static String blocksAutomatedReading(String host) {
+        String h = host == null ? "" : host.toLowerCase(Locale.ROOT);
+        if (h.equals("linkedin.com") || h.endsWith(".linkedin.com") || h.equals("lnkd.in")) return "LinkedIn";
+        if (h.matches("(.+\\.)?indeed\\.[a-z.]+")) return "Indeed";
+        if (h.equals("naukri.com") || h.endsWith(".naukri.com")) return "Naukri";
+        if (h.matches("(.+\\.)?glassdoor\\.[a-z.]+")) return "Glassdoor";
+        return null;
     }
 
     private String fetch(URI uri) {

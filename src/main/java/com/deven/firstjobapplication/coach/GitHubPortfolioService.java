@@ -86,6 +86,25 @@ public class GitHubPortfolioService {
                     + (defaultBranch.isBlank() ? "" : " Leave Branch empty to use the default branch \"" + defaultBranch + "\"."));
         }
     }
+    /**
+     * Files changed between two commits (GitHub compare API). GitHub lists at most 300 files; a larger change is marked
+     * incomplete so the caller re-evaluates everything instead of trusting a partial list.
+     */
+    public ChangeSet compare(String repository, String baseRevision, String headRevision) {
+        String[] id = repositoryId(repository);
+        JsonNode node = json(github.get().uri("/repos/{owner}/{name}/compare/{range}", id[0], id[1], baseRevision + "..." + headRevision)
+                .retrieve().body(String.class));
+        List<ChangedFile> files = new ArrayList<>();
+        for (JsonNode file : node.path("files")) {
+            String path = file.path("filename").asText();
+            String status = file.path("status").asText("modified");
+            String atCommit = status.equals("removed") ? baseRevision : headRevision;
+            String previous = file.path("previous_filename").asText(null);
+            files.add(new ChangedFile(path, status, "https://github.com/" + repository + "/blob/" + atCommit + "/" + path, previous));
+        }
+        boolean complete = node.has("files") && files.size() < 300;
+        return new ChangeSet(baseRevision, headRevision, files, List.of(), List.of(), complete);
+    }
     public boolean canCreateWebhooks() { return !token.isBlank() && publicWebhookBaseUrl.startsWith("https://"); }
     public void createPushWebhook(String repository, String secret) {
         if (!canCreateWebhooks()) throw new IllegalStateException("Set GITHUB_TOKEN and github.webhook.public-base-url to an HTTPS tunnel or deployed URL before installing a GitHub webhook.");

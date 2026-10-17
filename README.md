@@ -26,6 +26,7 @@
 - [Configuration](#configuration)
 - [Deployment](#deployment)
 - [Demo walkthrough](#demo-walkthrough)
+- [Brief coverage](#brief-coverage)
 - [Trust and traceability](#trust-and-traceability)
 - [API reference](#api-reference)
 - [Project structure](#project-structure)
@@ -51,11 +52,12 @@ A missing signal means *"not demonstrated in this scan"*. It is never treated as
 
 | Feature | What it does |
 |---|---|
-| **Real job requirements** | Reads a public posting URL, or posting text you paste in, and keeps the source link. The AI extracts each required skill together with the **exact phrase** from the posting. |
+| **Real job discovery** | Searches real postings on public **Greenhouse, Lever and Ashby** job boards (key-free APIs behind company careers pages) and imports one with its source link. A posting URL or pasted text also works. The AI extracts each required skill together with the **exact phrase** from the posting. |
 | **Evidence from real code** | Uses the GitHub REST API to read the repository at a specific commit. Every piece of evidence links to the **file and line at that commit**. |
 | **AI review of the evidence** | An LLM reads the code around each keyword match and rates each skill `DEMONSTRATED`, `PARTIAL` or `NOT_DEMONSTRATED`, with a confidence level, an explanation and a concrete next step. |
 | **Gap explanations** | A summary of how well the repository fits the role, plus a small, practical project suggestion for each gap. |
-| **Automatic change detection** | Polls GitHub every minute, or receives a signed GitHub **push webhook**, then rescans and reassesses automatically. No manual refresh. |
+| **Automatic change detection** | Polls GitHub every minute, or receives a signed GitHub **push webhook**, then rescans automatically. GitHub's compare API lists the changed files, and **only the skills those files affect are reassessed**; the rest keep their verdicts. Evidence from the commit is tagged *changed in this commit*. No manual refresh. |
+| **Demo evidence report** | One click downloads a Markdown report with the job source, repository evidence, gaps, the repository change and the before/after assessment, the evidence the brief asks for. |
 | **History** | Every assessment is stored, so you can compare before and after a commit. |
 | **Free AI options** | Works with free **Groq** or **Google Gemini** keys, or with **Anthropic Claude**. Without a key it falls back to keyword rules. |
 
@@ -72,7 +74,7 @@ flowchart LR
     F --> H[React dashboard + history]
 ```
 
-1. **Discover.** The backend fetches the posting, blocking private and local network addresses, and strips the HTML. The AI maps the text onto the skill taxonomy and quotes the phrase that justifies each skill.
+1. **Discover.** The student searches a company's public job board, or gives a posting URL or text. The backend fetches it (blocking private and local network addresses for URLs) and strips the HTML. The AI maps the text onto the skill taxonomy and quotes the phrase that justifies each skill.
 2. **Scan.** The scanner resolves the branch to a commit SHA, reads the recursive file tree, and inspects up to 80 relevant source and configuration files. Keyword rules pick the candidate files for each skill and capture the code around each match.
 3. **Review.** The AI judges whether each candidate file really shows the skill, which filters out false positives such as "delete" in a comment or `github.com` in a URL.
 4. **Verify.** Server-side guardrails accept a positive verdict only if it cites a file that was actually scanned (see [Trust and traceability](#trust-and-traceability)).
@@ -257,6 +259,22 @@ A frontend hosted on its own (for example on Vercel) also works. Build it with `
    ```
 5. **See the updated assessment.** Within about a minute, SQL changes from *Not demonstrated* to *Evidence found* and cites the new file and commit. The page shows what changed since the previous commit, and the history keeps both scans.
 
+## Brief coverage
+
+How each requirement of the **W-PS-2 AI Career Coach** brief is met:
+
+| Brief requirement | Where it lives |
+|---|---|
+| Discover real job or internship requirements, keeping source links | Job board search and import (Greenhouse, Lever, Ashby) or a posting URL; the source link is stored on every job and every skill quotes the posting |
+| Analyse the student's actual repositories, citing files or code | GitHub scan pinned to a commit SHA; every verdict lists permalinks to the file and line |
+| Compare evidence with requirements and explain the gaps | Per-skill verdict, confidence, explanation and a concrete next step, plus a coach summary |
+| Detect changes (polling or webhooks) and reassess the **affected** skills | 60-second polling and signed push webhooks; GitHub's compare API decides which skills to re-check, and the rest are carried over |
+| Demonstrate the loop | The four-step tracker on the page: job requirements → repository evidence → gaps → code change and updated assessment |
+| SQL "not demonstrated" until a commit adds queries, then cite the changed files | The changed file is tagged *changed in this commit*, SQL is marked *Re-checked* and *Improved*, and the change panel lists the commit's files |
+| A missing signal means "not demonstrated in this scope" | Shown on every gap and in the report; never worded as a missing skill |
+| No static, manually refreshed report | The page updates itself after a push; Rescan is optional |
+| Demo evidence deliverable | **Download evidence report**: job source, evidence, gaps, the change and the revised assessment |
+
 ## Trust and traceability
 
 The AI is never the only source of truth. `AssessmentService` checks every result against the scan:
@@ -285,6 +303,8 @@ The AI is never the only source of truth. `AssessmentService` checks every resul
 | `GET` | `/api/repositories/watch` | Current watch status |
 | `POST` | `/api/webhooks/github` | Signed GitHub push callback |
 | `GET` | `/api/ai/status` | Active AI provider and model |
+| `GET` | `/api/jobs/boards?source=GREENHOUSE&board=stripe&q=engineer` | Search a public Greenhouse, Lever or Ashby job board |
+| `POST` | `/api/jobs/import` | Import one board posting (`source`, `board`, `jobId`) with its source link |
 
 ## Project structure
 
