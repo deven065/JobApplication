@@ -17,13 +17,17 @@ public class CareerCoachController {
     private final GitHubPortfolioService github;
     private final StateStore store;
     private final AiCoach coach;
+    private final JobBoardService boards;
     private final Map<String, JobRequirement> savedJobs;
     public CareerCoachController(JobDiscoveryService jobs, AssessmentService assessments, GitHubPortfolioService github, StateStore store) {
         this(jobs, assessments, github, store, AiCoach.disabled());
     }
-    @org.springframework.beans.factory.annotation.Autowired
     public CareerCoachController(JobDiscoveryService jobs, AssessmentService assessments, GitHubPortfolioService github, StateStore store, AiCoach coach) {
-        this.jobs = jobs; this.assessments = assessments; this.github = github; this.store = store; this.coach = coach;
+        this(jobs, assessments, github, store, coach, new JobBoardService());
+    }
+    @org.springframework.beans.factory.annotation.Autowired
+    public CareerCoachController(JobDiscoveryService jobs, AssessmentService assessments, GitHubPortfolioService github, StateStore store, AiCoach coach, JobBoardService boards) {
+        this.jobs = jobs; this.assessments = assessments; this.github = github; this.store = store; this.coach = coach; this.boards = boards;
         savedJobs = new java.util.concurrent.ConcurrentHashMap<>(store.jobs());
         savedJobs.put("demo-backend", jobs.demoJob());
     }
@@ -38,8 +42,25 @@ public class CareerCoachController {
         return savedJobs.values().stream().filter(job -> !job.id().equals("demo-backend"))
                 .sorted(Comparator.comparing(JobRequirement::fetchedAt).reversed()).toList();
     }
+    /** Lists real postings from a company's public Greenhouse, Lever or Ashby board. */
+    @GetMapping("/jobs/boards") public JobBoardResults searchBoard(@RequestParam String source, @RequestParam String board, @RequestParam(required = false) String q) {
+        return boards.search(source, board, q);
+    }
+    /** Imports one board posting: its full text is read for requirements and its public URL is kept as the source. */
+    @PostMapping("/jobs/import") public JobRequirement importPosting(@RequestBody ImportJob body) {
+        JobBoardService.JobPosting posting = boards.fetch(body.source(), body.board(), body.jobId());
+        if (posting.url().isBlank()) throw new IllegalStateException("The job board did not return a public link for this posting.");
+        JobRequirement job = jobs.discover(posting.title(), posting.company(), posting.url(), posting.text());
+        store.saveJob(job); savedJobs.put(job.id(), job); return job;
+    }
     @PostMapping("/jobs/discover") public JobRequirement discover(@RequestBody DiscoverJob body) {
-        JobRequirement job = jobs.discover(body.title(), body.company(), body.sourceUrl(), body.postingText()); store.saveJob(job); savedJobs.put(job.id(), job); return job;
+        String text = body.postingText();
+        // A Greenhouse, Lever or Ashby job link is read through the board's official API instead of scraping the page.
+        if (text == null || text.isBlank()) {
+            var link = JobBoardService.recognise(body.sourceUrl());
+            if (link.isPresent()) text = boards.fetch(link.get().source(), link.get().board(), link.get().jobId()).text();
+        }
+        JobRequirement job = jobs.discover(body.title(), body.company(), body.sourceUrl(), text); store.saveJob(job); savedJobs.put(job.id(), job); return job;
     }
     @PutMapping("/jobs/{id}/requirements") public JobRequirement updateRequirements(@PathVariable String id, @RequestBody RequirementsUpdate body) {
         JobRequirement existing = Optional.ofNullable(savedJobs.get(id)).orElseThrow(() -> new NoSuchElementException("Unknown job id"));
@@ -119,6 +140,7 @@ public class CareerCoachController {
         return supplied != null && java.security.MessageDigest.isEqual(expected.getBytes(StandardCharsets.UTF_8), supplied.getBytes(StandardCharsets.UTF_8));
     }
     public record DiscoverJob(String title, String company, String sourceUrl, String postingText) { }
+    public record ImportJob(String source, String board, String jobId) { }
     public record AssessRequest(String jobId, String repository, String branch) { }
     public record WatchRequest(String repository, String branch, boolean installGitHubWebhook) { }
     public record RequirementsUpdate(List<Skill> skills) { }

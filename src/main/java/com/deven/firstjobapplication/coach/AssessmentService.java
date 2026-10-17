@@ -40,15 +40,76 @@ public class AssessmentService {
         String canonical = resolved.fullName();
         String resolvedBranch = branch == null || branch.isBlank() ? resolved.defaultBranch() : branch.trim();
         PortfolioScan scan = github.scan(canonical, resolvedBranch);
-        Assessment assessment = buildAssessment(job, scan);
         String key = key(job.id(), canonical);
+        // A manual rescan of a newer commit is treated like a detected change: only affected skills are re-run.
+        Assessment assessment = evaluate(job, scan, latestAssessments.get(key), new HashMap<>());
         store.saveAssessment(key, resolvedBranch, assessment);
         scans.put(repoKey(canonical), scan);
         subscriptions.put(key, new AssessmentSubscription(job, canonical, resolvedBranch));
         latestAssessments.put(key, assessment);
         return assessment;
     }
-    private Assessment buildAssessment(JobRequirement job, PortfolioScan scan) {
+    /**
+     * Builds the assessment for a new scan. With a previous assessment of an older commit, GitHub's compare API says
+     * which files changed; a skill is re-evaluated only if a changed file was among its previous evidence or its new
+     * candidates. Every other skill keeps its verdict, with evidence links moved to the new commit (the files are
+     * identical there). If the change list is unavailable or incomplete, everything is re-evaluated.
+     */
+    private Assessment evaluate(JobRequirement job, PortfolioScan scan, Assessment previous, Map<String, ChangeSet> compareCache) {
+        boolean comparable = previous != null && previous.portfolio() != null
+                && !previous.portfolio().revision().equals(scan.revision())
+                && previous.portfolio().repository().equalsIgnoreCase(scan.repository())
+                && new HashSet<>(previous.job().requiredSkills()).equals(new HashSet<>(job.requiredSkills()));
+        if (!comparable) return buildAssessment(job, scan, Map.of());
+        String base = previous.portfolio().revision();
+        ChangeSet diff = compareCache.computeIfAbsent(base, b -> {
+            try { return github.compare(scan.repository(), b, scan.revision()); }
+            catch (Exception error) { log.warn("Could not compare {}..{}; re-evaluating every skill", b, scan.revision(), error); return null; }
+        });
+        if (diff == null || !diff.complete()) {
+            Assessment full = buildAssessment(job, scan, Map.of());
+            ChangeSet change = new ChangeSet(base, scan.revision(), diff == null ? List.of() : diff.files(), job.requiredSkills(), List.of(), false);
+            return withChange(full, full.gaps(), full.summary(), full.assessedBy(), change);
+        }
+        Set<String> changedPaths = new HashSet<>();
+        for (ChangedFile file : diff.files()) { changedPaths.add(file.path()); if (file.previousPath() != null) changedPaths.add(file.previousPath()); }
+        Map<Skill, Gap> before = new EnumMap<>(Skill.class);
+        for (Gap gap : previous.gaps()) before.put(gap.skill(), gap);
+        List<Skill> affected = new ArrayList<>(), unchanged = new ArrayList<>();
+        for (Skill skill : job.requiredSkills()) {
+            Gap old = before.get(skill);
+            boolean touched = old == null
+                    || old.evidence().stream().anyMatch(e -> changedPaths.contains(e.path()))
+                    || scan.evidence().getOrDefault(skill, List.of()).stream().anyMatch(e -> changedPaths.contains(e.path()));
+            (touched ? affected : unchanged).add(skill);
+        }
+        ChangeSet change = new ChangeSet(base, scan.revision(), diff.files(), affected, unchanged, true);
+        Map<Skill, Gap> merged = new EnumMap<>(Skill.class);
+        for (Skill skill : unchanged) merged.put(skill, movedToCommit(before.get(skill), base, scan.revision()));
+        String summary = previous.summary(), assessedBy = previous.assessedBy();
+        if (!affected.isEmpty()) {
+            JobRequirement subset = new JobRequirement(job.id(), job.title(), job.company(), job.sourceUrl(), job.sourceExcerpt(), affected, job.fetchedAt(),
+                    Optional.ofNullable(job.requirementQuotes()).orElse(List.of()).stream().filter(q -> affected.contains(q.skill())).toList(), job.extractedBy());
+            Map<Skill, String> context = new EnumMap<>(Skill.class);
+            for (Skill skill : unchanged) context.put(skill, merged.get(skill).status());
+            Assessment partial = buildAssessment(subset, scan, context);
+            for (Gap gap : partial.gaps()) merged.put(gap.skill(), gap);
+            summary = partial.summary(); assessedBy = partial.assessedBy();
+        }
+        List<Gap> gaps = job.requiredSkills().stream().map(merged::get).toList();
+        return new Assessment(job, scan, gaps, summary, assessedBy, change);
+    }
+    private static Assessment withChange(Assessment base, List<Gap> gaps, String summary, String assessedBy, ChangeSet change) {
+        return new Assessment(base.job(), base.portfolio(), gaps, summary, assessedBy, change);
+    }
+    /** The file behind this evidence did not change, so the same lines exist at the new commit. */
+    private static Gap movedToCommit(Gap gap, String fromRevision, String toRevision) {
+        List<Evidence> moved = gap.evidence().stream().map(e -> new Evidence(e.skill(), e.path(),
+                e.url() == null ? null : e.url().replace("/blob/" + fromRevision + "/", "/blob/" + toRevision + "/"),
+                e.reason(), e.snippet(), e.excerpt())).toList();
+        return new Gap(gap.skill(), gap.status(), gap.explanation(), moved, gap.confidence(), gap.nextStep(), gap.assessedBy());
+    }
+    private Assessment buildAssessment(JobRequirement job, PortfolioScan scan, Map<Skill, String> unchangedContext) {
         List<Gap> rules = job.requiredSkills().stream().map(skill -> {
             List<Evidence> evidence = scan.evidence().getOrDefault(skill, List.of());
             if (evidence.isEmpty()) return new Gap(skill, "NOT_DEMONSTRATED",
@@ -57,7 +118,8 @@ public class AssessmentService {
         }).toList();
         if (!coach.enabled()) return new Assessment(job, scan, rules);
         try {
-            return aiAssessment(job, scan, rules, coach.review(job, scan));
+            AiCoach.PortfolioReview review = unchangedContext.isEmpty() ? coach.review(job, scan) : coach.review(job, scan, unchangedContext);
+            return aiAssessment(job, scan, rules, review);
         } catch (Exception error) {
             log.warn("AI review failed; using keyword rules", error);
             return new Assessment(job, scan, rules, aiUnavailable(error), "rules");
@@ -121,9 +183,10 @@ public class AssessmentService {
         try {
             PortfolioScan scan = github.scan(r.repository(), r.branch());
             List<Assessment> updated = new ArrayList<>();
+            Map<String, ChangeSet> compareCache = new HashMap<>();  // one compare call per base commit, shared by all jobs
             for (AssessmentSubscription subscription : subscriptions.values()) {
                 if (!subscription.repository().equalsIgnoreCase(repository) || !subscription.branch().equals(r.branch())) continue;
-                Assessment assessment = buildAssessment(subscription.job(), scan);
+                Assessment assessment = evaluate(subscription.job(), scan, latestAssessments.get(key(subscription.job().id(), repository)), compareCache);
                 store.saveAssessment(key(subscription.job().id(), repository), subscription.branch(), assessment);
                 latestAssessments.put(key(subscription.job().id(), repository), assessment);
                 updated.add(assessment);

@@ -153,11 +153,22 @@ public class AiCoach {
             {"summary":"...","verdicts":[{"skill":"SQL","status":"DEMONSTRATED","confidence":"HIGH","explanation":"...","citedPaths":["queries/app.sql"],"nextStep":"..."}]}
             status is DEMONSTRATED, PARTIAL or NOT_DEMONSTRATED; confidence is HIGH, MEDIUM or LOW.""";
 
-    public PortfolioReview review(JobRequirement job, PortfolioScan scan) {
+    public PortfolioReview review(JobRequirement job, PortfolioScan scan) { return review(job, scan, Map.of()); }
+
+    /**
+     * Reviews only job.requiredSkills(). unchanged lists the other required skills (with their current status) whose
+     * files the latest commit did not touch, so the summary can still describe the whole role.
+     */
+    public PortfolioReview review(JobRequirement job, PortfolioScan scan, Map<Skill, String> unchanged) {
         StringBuilder prompt = new StringBuilder();
         prompt.append("Role: ").append(job.title()).append(" at ").append(job.company()).append('\n');
         prompt.append("Repository: ").append(scan.repository()).append(" @ ").append(scan.revision())
                 .append(" (").append(scan.scannedFiles()).append(" files read, ").append(scan.skippedFiles()).append(" skipped)\n\n");
+        if (!unchanged.isEmpty()) {
+            prompt.append("The latest commit did not touch the files behind these other required skills, so they keep their earlier verdicts: ")
+                    .append(unchanged.entrySet().stream().map(e -> e.getKey().label() + " = " + e.getValue()).collect(Collectors.joining(", ")))
+                    .append(".\nReturn verdicts only for the requirements below, but write the summary for the whole role.\n\n");
+        }
         Map<Skill, String> quotes = Optional.ofNullable(job.requirementQuotes()).orElse(List.of()).stream()
                 .collect(Collectors.toMap(RequirementQuote::skill, RequirementQuote::quote, (a, b) -> a));
         int excerptChars = provider == null ? 1800 : provider.excerptChars();

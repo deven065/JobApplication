@@ -420,3 +420,47 @@ input:focus-visible, select:focus-visible, textarea:focus-visible,
 .spinner.tiny { width: 11px; height: 11px; border-width: 2px; border-color: rgba(94, 234, 212, .3); border-top-color: var(--accent); }
 .pendingBanner { color: #c7d2fe; background: linear-gradient(110deg, rgba(129, 140, 248, .18), rgba(94, 234, 212, .06)); border-color: rgba(129, 140, 248, .4); }
 .pendingBanner span { color: #a5b4fc; }
+
+/* Job boards */
+.modeTabs { display: inline-flex; padding: 4px; gap: 4px; margin: 14px 0 2px; border-radius: 12px; background: var(--glass); box-shadow: var(--glass-shine); }
+.modeTabs button { position: relative; isolation: isolate; padding: 7px 13px; font-size: .82rem; color: var(--muted); background: transparent; border-radius: 8px; }
+.modeTabs button.active { color: var(--text); }
+.hintLine { margin: 10px 0 0; line-height: 1.5; }
+.hintLine strong { color: var(--accent); }
+.boardResults { list-style: none; margin: 16px 0 0; padding: 0; display: grid; gap: 8px; max-height: 340px; overflow: auto; }
+.boardResults li { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; background: rgba(255, 255, 255, .045); box-shadow: var(--glass-shine); }
+.boardResults li > div { flex: 1; min-width: 0; }
+.boardResults strong { display: block; font-size: .9rem; overflow-wrap: anywhere; }
+.boardResults span { color: var(--muted); font-size: .8rem; }
+.boardResults a { color: var(--muted); display: inline-flex; }
+.boardResults a:hover { color: var(--text); }
+.boardResults .secondary { padding: 7px 12px; font-size: .8rem; }
+
+/* What changed */
+.changePanel { border-color: rgba(94, 234, 212, .3); }
+.changeHead { display: flex; gap: 14px; align-items: flex-start; }
+.changeHead h3 { margin: 2px 0 2px; font-size: 1rem; }
+.changeHead p { margin: 0; }
+.changeHead a { color: #a5b4fc; text-decoration: none; }
+.changeGrid { display: grid; grid-template-columns: 1.3fr 1fr; gap: 20px; margin-top: 16px; }
+.changeGrid > div { min-width: 0; }
+.changeGrid .label { margin: 0 0 8px; font-size: .7rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.changeGrid .skillChips + .label { margin-top: 14px; }
+.changedFiles { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.changedFiles li { display: flex; gap: 8px; align-items: center; font-size: .84rem; min-width: 0; }
+.changedFiles a { color: #c7d2fe; text-decoration: none; overflow-wrap: anywhere; word-break: break-all; }
+.fileStatus { flex: none; font-size: .66rem; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; padding: 2px 7px; border-radius: 999px; background: rgba(148, 163, 207, .14); color: var(--muted); }
+.fileStatus.st-added { background: var(--good-bg); color: var(--good); }
+.fileStatus.st-removed { background: var(--gap-bg); color: var(--gap); }
+.fileStatus.st-modified, .fileStatus.st-renamed, .fileStatus.st-changed { background: var(--warn-bg); color: var(--warn); }
+.skillChips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip-rechecked { color: #06121a; background: var(--accent); }
+.chip-unchanged { color: var(--muted); background: rgba(148, 163, 207, .12); }
+.changedTag { flex: none; margin-left: auto; font-style: normal; font-size: .66rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--good); background: var(--good-bg); padding: 2px 7px; border-radius: 999px; }
+.reportButton { margin-top: 14px; }
+@media (max-width: 900px) { .changeGrid { grid-template-columns: 1fr; } }
+
+optgroup { color: var(--muted); font-style: normal; background: #0d1526; }
+
+.boardSearch form { margin-top: 4px; }
+.boardSearch .boardResults { margin-top: 12px; }
