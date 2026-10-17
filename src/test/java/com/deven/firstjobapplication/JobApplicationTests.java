@@ -13,7 +13,9 @@ import java.net.http.HttpResponse;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-        properties = "spring.datasource.url=jdbc:h2:mem:proofpath_context_test;DB_CLOSE_DELAY=-1")
+        // Tests run against in-memory H2 in PostgreSQL mode, so they never need (or touch) a real database.
+        properties = {"spring.datasource.url=jdbc:h2:mem:proofpath_context_test;MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
+                "spring.datasource.username=sa", "spring.datasource.password="})
 class JobApplicationTests {
     @Value("${local.server.port}") int port;
 

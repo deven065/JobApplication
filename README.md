@@ -10,7 +10,7 @@
 ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.1-6DB33F)
 ![React](https://img.shields.io/badge/React-18-61DAFB)
 ![AI](https://img.shields.io/badge/AI-Groq%20%7C%20Gemini%20%7C%20Claude-8A2BE2)
-![Database](https://img.shields.io/badge/DB-H2%20%7C%20PostgreSQL-blue)
+![Database](https://img.shields.io/badge/DB-PostgreSQL-336791)
 
 </div>
 
@@ -85,7 +85,7 @@ flowchart LR
 | Backend | Java 17+, Spring Boot 4.1 (Web MVC, JDBC, Scheduling) |
 | AI | Groq / Google Gemini (OpenAI-compatible API, JSON mode), Anthropic Claude (`anthropic-java` SDK, structured outputs) |
 | Integrations | GitHub REST API, GitHub push webhooks (HMAC-SHA256 verified) |
-| Persistence | H2 (embedded, file-based). PostgreSQL is optional |
+| Persistence | PostgreSQL (in-memory H2 only for the automated tests) |
 | Frontend | React 18, Vite 5 |
 | Testing | JUnit 5, Mockito, AssertJ, Spring Boot Test |
 
@@ -95,6 +95,7 @@ flowchart LR
 
 - **Java 17+**
 - **Node.js 20+**
+- **Docker** (to run PostgreSQL), or your own PostgreSQL 14+ server
 - *(Recommended)* A free AI key from [Groq](https://console.groq.com/keys) or [Google AI Studio](https://aistudio.google.com/apikey)
 
 ### 1. Clone the repository
@@ -111,7 +112,15 @@ Copy `.env.example` to `.env` in the project root and add **one** key. `.env` is
 GROQ_API_KEY=gsk_your_key_here
 ```
 
-### 3. Start the backend (port 8081)
+### 3. Start PostgreSQL
+
+```bash
+docker compose up -d db
+```
+
+This starts PostgreSQL on port **5433** (database, user and password are all `proofpath`), which is what the backend connects to by default. Its data is kept in the `proofpath-db` Docker volume. To use your own PostgreSQL server instead, see [Using PostgreSQL](#using-postgresql).
+
+### 4. Start the backend (port 8081)
 
 ```powershell
 .\mvnw.cmd spring-boot:run
@@ -123,7 +132,7 @@ On macOS or Linux, use `./mvnw spring-boot:run`. The log should show:
 AI coach enabled: groq:openai/gpt-oss-120b
 ```
 
-### 4. Start the frontend (port 5173)
+### 5. Start the frontend (port 5173)
 
 ```powershell
 cd frontend
@@ -133,7 +142,7 @@ npm run dev
 
 Open **http://localhost:5173**. Vite forwards `/api` requests to the backend. A badge on the page shows whether AI review is on.
 
-> **Note:** Run only one backend at a time. H2 locks `proofpath-data.mv.db`, so stop the IntelliJ run before starting from a terminal, and the other way round.
+> **Note:** Run only one backend at a time (port 8081). Stop the IntelliJ run before starting from a terminal, and the other way round. If the backend fails with *Connection refused*, PostgreSQL is not running: start it with `docker compose up -d db`.
 
 ## Configuration
 
@@ -164,15 +173,16 @@ Free-tier limits change often. Groq's free tier allows few tokens per minute, so
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `DATABASE_URL` | `jdbc:h2:file:./proofpath-data;MODE=PostgreSQL` | JDBC URL. Set a PostgreSQL URL to switch databases |
-| `DATABASE_USERNAME` / `DATABASE_PASSWORD` | `sa` / *(empty)* | Database credentials |
+| `DATABASE_URL` | `jdbc:postgresql://localhost:5433/proofpath` | PostgreSQL URL. Accepts `jdbc:postgresql://…` or a platform URL such as `postgres://user:pass@host/db` |
+| `DATABASE_USERNAME` / `DATABASE_PASSWORD` | `proofpath` / `proofpath` | Credentials (not needed when they are inside a `postgres://` URL) |
+| `DATABASE_POOL_SIZE` | `5` | Maximum database connections; small enough for free database plans |
 | `FRONTEND_ORIGIN` | `http://localhost:5173` | Allowed CORS origin(s) for a deployed frontend |
 
-H2 stores its data in `proofpath-data.mv.db` in the project root. The four tables (`coach_jobs`, `coach_watches`, `coach_assessments`, `coach_history`) are created automatically. To start with an empty database, stop the backend and delete `proofpath-data.mv.db` and `proofpath-data.trace.db`.
+The four tables (`coach_jobs`, `coach_watches`, `coach_assessments`, `coach_history`) are created automatically on first start. To start with an empty local database, run `docker compose down -v` and then `docker compose up -d db`.
 
 ### Using PostgreSQL
 
-H2 is the default, so the app runs with no setup. To use PostgreSQL instead, pick one option.
+PostgreSQL is the only database the application uses. Pick one way to run it.
 
 **Option A: everything in Docker (easiest).** `docker-compose.yml` starts the app plus its own PostgreSQL. API keys are read from `.env`.
 
@@ -182,7 +192,7 @@ docker compose up --build
 
 The app runs at http://localhost:8081. The database listens on host port 5433 (user `proofpath`, password `proofpath`, database `proofpath`), and its data persists in the `proofpath-db` Docker volume.
 
-**Option B: your own PostgreSQL server.** Create a database, then add the connection to `.env`:
+**Option B: your own PostgreSQL server** (local, Docker or hosted). Create a database, then add the connection to `.env`:
 
 ```properties
 DATABASE_URL=jdbc:postgresql://localhost:5432/proofpath
@@ -190,7 +200,7 @@ DATABASE_USERNAME=postgres
 DATABASE_PASSWORD=your_password
 ```
 
-Start the backend as usual. The four `coach_*` tables are created automatically on first start. Tests always use in-memory H2, whatever is in `.env`.
+Start the backend as usual. The four `coach_*` tables are created automatically on first start. The automated tests never touch PostgreSQL: they use an in-memory H2 database in PostgreSQL mode.
 
 ## Deployment
 
@@ -227,10 +237,10 @@ docker build -t proofpath .
 ```
 
 ```bash
-docker run -p 8081:8081 --env-file .env -e DATABASE_URL=jdbc:h2:file:/tmp/proofpath proofpath
+docker run -p 8081:8081 --env-file .env -e DATABASE_URL=jdbc:postgresql://host.docker.internal:5432/proofpath proofpath
 ```
 
-The `-e DATABASE_URL=…` override matters when `.env` points at `localhost`, because inside a container `localhost` is the container itself. To run the app together with its own PostgreSQL, use `docker compose up --build` (see [Using PostgreSQL](#using-postgresql)).
+Inside a container `localhost` is the container itself, so point `DATABASE_URL` at `host.docker.internal` to reach a PostgreSQL server on your computer. To run the app together with its own PostgreSQL, use `docker compose up --build` (see [Using PostgreSQL](#using-postgresql)).
 
 ### Separate frontend (optional)
 
@@ -288,7 +298,7 @@ JobApplication/
 │   ├── JobDiscoveryService.java    # Posting fetch and requirement extraction
 │   ├── RepositoryMonitor.java      # Scheduled change detection (polling)
 │   ├── SkillMatcher.java           # Keyword rules for candidate evidence
-│   ├── StateStore.java             # H2 / PostgreSQL persistence
+│   ├── StateStore.java             # PostgreSQL persistence
 │   └── Models.java, Skill.java     # Domain records and skill taxonomy
 ├── src/main/resources/application.properties
 ├── src/test/java/...               # Unit and integration tests
