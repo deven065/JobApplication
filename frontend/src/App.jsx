@@ -373,7 +373,6 @@ export default function App() {
       <div className="brand"><m.span className="logo" whileHover={{ rotate: -8, scale: 1.08 }} transition={spring}><Icon name="logo" size={20} /></m.span><span>ProofPath</span><span className="tag">Kurukshetra Hackathon</span></div>
       <div className="pills">
         <AnimatePresence>{watching && <m.span key="live" className="pill live" initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.8 }} transition={spring}><i className="dot" />Watching {repository}</m.span>}</AnimatePresence>
-        {ai && <m.span className={`pill ${ai.enabled ? 'ai' : 'off'}`} title={ai.message} initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.3, ...spring }}><Icon name="spark" size={14} />{ai.enabled ? `AI · ${ai.provider} · ${ai.model}` : 'Keyword mode'}</m.span>}
       </div>
     </m.nav>
 
@@ -418,7 +417,7 @@ export default function App() {
         <details className="advanced boardSearch"><summary>Or search a public job board (Greenhouse, Lever, Ashby)</summary>
           <form onSubmit={searchBoard}>
             <div className="row"><label>Job board<select value={boardQuery.source} onChange={event => { setBoardQuery({ ...boardQuery, source: event.target.value }); setBoardResults(null) }}>{BOARDS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-              <label>Company board name<input required value={boardQuery.board} onChange={event => setBoardQuery({ ...boardQuery, board: event.target.value })} placeholder={`e.g. ${BOARDS.find(item => item[0] === boardQuery.source)[2]}`} /></label></div>
+              <label>Company board name<input required value={boardQuery.board} onChange={event => setBoardQuery({ ...boardQuery, board: event.target.value })} placeholder={`e.g. ${(BOARDS.find(item => item[0] === boardQuery.source) || BOARDS[0])[2]}`} /></label></div>
             <label>Keyword (optional)<input value={boardQuery.q} onChange={event => setBoardQuery({ ...boardQuery, q: event.target.value })} placeholder="engineer, intern…" /></label>
             <div className="buttons"><button className="secondary" disabled={!!busy}>Search postings</button></div>
           </form>
