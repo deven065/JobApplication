@@ -215,6 +215,7 @@ export default function App() {
   const [fixing, setFixing] = useState(false)
   const [authChecked, setAuthChecked] = useState(false)
   const [guest, setGuest] = useState(() => { try { return sessionStorage.getItem('pp_guest') === '1' } catch { return false } })
+  const [form, setForm] = useState({ mode: 'signin', name: '', email: '', password: '', busy: false, error: '' })
   const continueAsGuest = () => { try { sessionStorage.setItem('pp_guest', '1') } catch { /* private mode */ } setGuest(true) }
   const [myRepos, setMyRepos] = useState([])
   const [ready, setReady] = useState({ source: 'GREENHOUSE', boards: '', q: '', results: null })
@@ -327,8 +328,21 @@ export default function App() {
   const fixFor = gap => ({
     run: fixGap, busy: fixing, issue: issues[issueKey(gap)], who: auth.user?.login || 'guest',
     hint: !auth.user ? <span className="muted small">Sign in with GitHub to open this as an issue in your repository.</span>
+      : auth.user.provider === 'email' ? <span className="muted small">Opening an issue needs a GitHub sign-in.</span>
       : !auth.user.issueAccess ? <a className="small" href={`${API}/auth/github/login?issues=true`}>Allow ProofPath to open issues</a> : null
   })
+  async function submitAccount(event) {
+    event.preventDefault()
+    setForm(current => ({ ...current, busy: true, error: '' }))
+    try {
+      const user = await request(form.mode === 'signup' ? '/auth/register' : '/auth/login', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: form.name, email: form.email, password: form.password })
+      })
+      setAuth(current => ({ ...current, user })); setMyRepos([])
+      setForm(current => ({ ...current, password: '', busy: false }))
+      request('/jobs').then(setSavedJobs).catch(() => {})
+    } catch (error) { setForm(current => ({ ...current, busy: false, error: error.message })) }
+  }
   async function signOut() {
     try { await request('/auth/logout', { method: 'POST' }) } catch { /* already signed out */ }
     setAuth(current => ({ ...current, user: null })); setMyRepos([]); setSavedJobs([]); setJob(null); setAssessment(null); setHistory([])
@@ -450,12 +464,22 @@ export default function App() {
     <div className="loginCard">
       <span className="logo"><Icon name="logo" size={24} /></span>
       <h1>ProofPath</h1>
-      <p className="loginLead">Show what your code actually proves. Sign in to pick from your repositories, include private ones, and keep your jobs and history on every device.</p>
-      {auth.configured
-        ? <a className="githubButton big" href={`${API}/auth/github/login`}><Icon name="github" size={18} />Sign in with GitHub</a>
-        : <p className="muted small">GitHub sign-in is not set up on this server yet. Add GITHUB_OAUTH_CLIENT_ID and GITHUB_OAUTH_CLIENT_SECRET to enable it.</p>}
+      <p className="loginLead">Show what your code actually proves. Sign in to keep your jobs and history on every device.</p>
+      {auth.configured && <a className="githubButton big" href={`${API}/auth/github/login`}><Icon name="github" size={18} />Continue with GitHub</a>}
+      {auth.configured && <p className="divider"><span>or use an email</span></p>}
+      <div className="authTabs" role="tablist">
+        <button type="button" role="tab" aria-selected={form.mode === 'signin'} className={form.mode === 'signin' ? 'on' : ''} onClick={() => setForm({ ...form, mode: 'signin', error: '' })}>Sign in</button>
+        <button type="button" role="tab" aria-selected={form.mode === 'signup'} className={form.mode === 'signup' ? 'on' : ''} onClick={() => setForm({ ...form, mode: 'signup', error: '' })}>Create account</button>
+      </div>
+      <form className="loginForm" onSubmit={submitAccount}>
+        {form.mode === 'signup' && <label>Name<input value={form.name} onChange={event => setForm({ ...form, name: event.target.value })} placeholder="Your name" autoComplete="name" maxLength={80} /></label>}
+        <label>Email<input type="email" required value={form.email} onChange={event => setForm({ ...form, email: event.target.value })} placeholder="you@example.com" autoComplete="email" /></label>
+        <label>Password<input type="password" required minLength={form.mode === 'signup' ? 8 : undefined} value={form.password} onChange={event => setForm({ ...form, password: event.target.value })} placeholder={form.mode === 'signup' ? 'At least 8 characters' : 'Your password'} autoComplete={form.mode === 'signup' ? 'new-password' : 'current-password'} maxLength={128} /></label>
+        {form.error && <p className="formError" role="alert">{form.error}</p>}
+        <button className="primary" disabled={form.busy}>{form.busy ? 'Please wait…' : form.mode === 'signup' ? 'Create account' : 'Sign in'}</button>
+      </form>
       <button type="button" className="ghost" onClick={continueAsGuest}>Continue without signing in</button>
-      <p className="muted small">Sign-in asks only to read your public profile. Private repositories are optional and need your separate approval.</p>
+      <p className="muted small">Email accounts can assess any public repository. Signing in with GitHub also lets you pick your own repositories, include private ones, and open issues.</p>
     </div>
   </div>
 
@@ -466,7 +490,7 @@ export default function App() {
       <div className="pills">
         <AnimatePresence>{watching && <m.span key="live" className="pill live" initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.8 }} transition={spring}><i className="dot" />Watching {repository}</m.span>}</AnimatePresence>
         {auth.user
-          ? <span className="account">{auth.user.avatarUrl && <img src={auth.user.avatarUrl} alt="" width="26" height="26" />}<span>{auth.user.login}</span><button type="button" className="ghost" onClick={signOut}>Sign out</button></span>
+          ? <span className="account">{auth.user.avatarUrl && <img src={auth.user.avatarUrl} alt="" width="26" height="26" />}<span>{auth.user.provider === 'email' ? auth.user.name : auth.user.login}</span><button type="button" className="ghost" onClick={signOut}>Sign out</button></span>
           : auth.configured && <a className="githubButton" href={`${API}/auth/github/login`}><Icon name="github" size={16} />Sign in with GitHub</a>}
       </div>
     </m.nav>
@@ -536,7 +560,7 @@ export default function App() {
           <option value="">Choose one of your {myRepos.length} repositories</option>
           {myRepos.map(repo => <option key={repo.fullName} value={repo.fullName}>{repo.fullName}{repo.privateRepository ? ' (private)' : ''}{repo.language ? ` · ${repo.language}` : ''}</option>)}
         </select></label>}
-        {auth.user && !auth.user.privateAccess && <p className="muted small hintLine">Showing public repositories. <a href={`${API}/auth/github/login?privateRepos=true`}>Include private repositories</a></p>}
+        {auth.user && auth.user.provider !== 'email' && !auth.user.privateAccess && <p className="muted small hintLine">Showing public repositories. <a href={`${API}/auth/github/login?privateRepos=true`}>Include private repositories</a></p>}
         {!auth.user && auth.configured && <p className="muted small hintLine"><a href={`${API}/auth/github/login`}>Sign in with GitHub</a> to pick from your repositories, include private ones, and keep your jobs on every device.</p>}
         <label>{auth.user ? 'Or type any public repository' : 'Repository'}<div className="inputGroup"><span>github.com/</span><input value={repository} onChange={event => { setRepository(event.target.value); setRepoDetails(null); setWatching(false) }} placeholder="owner/repository" /></div></label>
         <label>Branch<input value={branch} onChange={event => { setBranch(event.target.value); setWatching(false) }} placeholder="Default branch" /></label>

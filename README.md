@@ -59,6 +59,7 @@ A missing signal means *"not demonstrated in this scan"*. It is never treated as
 | **Automatic change detection** | Polls GitHub every minute, or receives a signed GitHub **push webhook**, then rescans automatically. GitHub's compare API lists the changed files, and **only the skills those files affect are reassessed**; the rest keep their verdicts. Evidence from the commit is tagged *changed in this commit*. No manual refresh. |
 | **Demo evidence report** | One click downloads a Markdown report with the job source, repository evidence, gaps, the repository change and the before/after assessment, the evidence the brief asks for. |
 | **Sign in with GitHub** | GitHub OAuth sign-in: pick from your own repositories (private ones too, if you allow it), keep your saved jobs on every device, and scan with your own GitHub rate limit. Tokens are stored encrypted. |
+| **Email accounts** | Sign up and sign in with an email and password (no GitHub needed). Passwords are stored only as salted PBKDF2 hashes, and repeated wrong passwords lock the account for ten minutes. Email accounts can assess any public repository; picking your own repositories, private repositories, opening issues and the public profile need a GitHub sign-in. |
 | **Jobs you're ready for** | Ranks every open posting on the company job boards you choose by how many of its requirements your repository already proves (*"You meet 5 of 6 — missing: SQL"*). One click imports a posting and runs the full assessment. |
 | **Fix this gap** | Opens a GitHub Issue in your own repository with a checklist for the missing skill and starts watching the repository. Close it with a commit and ProofPath re-checks that skill on its own. |
 | **Learning path per gap** | Two official resources, a time estimate, a small proof project and a step checklist for every missing skill. Your progress is remembered in the browser. |
@@ -342,6 +343,7 @@ The AI is never the only source of truth. `AssessmentService` checks every resul
 | `GET` `POST` | `/api/profile` · `/api/profile/publish` · `/api/profile/unpublish` | Manage your public profile (signed in) |
 | `GET` | `/api/public/{login}` · `/api/public/{login}/badge.svg?skill=SQL` | Public profile and README badge |
 | `GET` | `/api/jobs/ready?repository=owner/repo&source=GREENHOUSE&boards=stripe,airbnb&q=engineer` | Open postings ranked by how much of each one the repository proves |
+| `POST` | `/api/auth/register` · `/api/auth/login` | Email and password sign-up and sign-in (`{name, email, password}`) |
 | `GET` | `/api/auth/status` · `/api/me/repos` | Signed-in user and their repositories |
 | `GET` | `/api/auth/github/login` → `/api/auth/github/callback` | GitHub OAuth sign-in (`POST /api/auth/logout` signs out) |
 | `GET` | `/api/jobs/boards?source=GREENHOUSE&board=stripe&q=engineer` | Search a public Greenhouse, Lever or Ashby job board |

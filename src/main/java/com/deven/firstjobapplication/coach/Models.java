@@ -55,8 +55,10 @@ public final class Models {
     public record JobListing(String source, String board, String id, String title, String company, String location, String url) { }
     public record JobBoardResults(String source, String board, String company, int total, List<JobListing> jobs) { }
     /** The signed-in GitHub user. privateAccess is true when they granted the repo scope. */
-    public record AuthUser(String login, String name, String avatarUrl, boolean privateAccess, boolean issueAccess) {
-        public AuthUser(String login, String name, String avatarUrl, boolean privateAccess) { this(login, name, avatarUrl, privateAccess, privateAccess); }
+    public record AuthUser(String login, String name, String avatarUrl, boolean privateAccess, boolean issueAccess, String provider) {
+        public AuthUser(String login, String name, String avatarUrl, boolean privateAccess, boolean issueAccess) { this(login, name, avatarUrl, privateAccess, issueAccess, "github"); }
+        public AuthUser(String login, String name, String avatarUrl, boolean privateAccess) { this(login, name, avatarUrl, privateAccess, privateAccess, "github"); }
+        public AuthUser { if (provider == null || provider.isBlank()) provider = "github"; }
     }
     public record AuthStatus(boolean configured, AuthUser user) { }
     public record RepoSummary(String fullName, boolean privateRepository, String defaultBranch, String language, String description, Instant pushedAt) { }
