@@ -7,6 +7,8 @@
 
 [build.environment]
   NODE_VERSION = "20"
+  # The username is a plain name (not a secret) and appears in docs and compose files, which trips Netlify's secret scan.
+  SECRETS_SCAN_OMIT_KEYS = "DATABASE_USERNAME"
 
 # API calls are proxied (status 200 = rewrite, not a redirect). Change the target if your Render URL differs.
 [[redirects]]
