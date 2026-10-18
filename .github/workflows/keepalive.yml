@@ -1,0 +1,16 @@
+# Render's free web service sleeps after ~15 minutes without traffic and takes about a minute to wake.
+# This pings the live site every 10 minutes (through Netlify's /api proxy to Render) so a visitor or a judge
+# never meets a cold start. Free for public repositories; GitHub pauses scheduled runs after 60 days without repo activity.
+name: Keep backend awake
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping /api/ai/status
+        run: curl --fail --silent --show-error --max-time 90 --retry 3 --retry-delay 20 https://proofpath-ai.netlify.app/api/ai/status

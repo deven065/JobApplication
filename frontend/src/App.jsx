@@ -2,6 +2,7 @@ import { forwardRef, useEffect, useRef, useState } from 'react'
 import { AnimatePresence, LazyMotion, MotionConfig, m } from 'framer-motion'
 import { CountUp, cardIn, ease, fadeUp, spotlight, spring, stagger } from './motion.jsx'
 import { GrowthPanel, LearningPlan } from './Growth.jsx'
+import { ActivityFeed, PortfolioPanel } from './Portfolio.jsx'
 
 const API = import.meta.env.VITE_API_BASE_URL || '/api'
 const SKILLS = ['JAVA', 'SPRING_BOOT', 'REST_API', 'SQL', 'POSTGRESQL', 'REACT', 'DOCKER', 'TESTING', 'GIT']
@@ -215,7 +216,8 @@ export default function App() {
   const [fixing, setFixing] = useState(false)
   const [authChecked, setAuthChecked] = useState(false)
   const [guest, setGuest] = useState(() => { try { return sessionStorage.getItem('pp_guest') === '1' } catch { return false } })
-  const [form, setForm] = useState({ mode: 'signin', name: '', email: '', password: '', busy: false, error: '' })
+  const [form, setForm] = useState({ mode: 'signin', name: '', email: '', password: '', busy: false, error: '', notice: '' })
+  const [resent, setResent] = useState(false)
   const continueAsGuest = () => { try { sessionStorage.setItem('pp_guest', '1') } catch { /* private mode */ } setGuest(true) }
   const [myRepos, setMyRepos] = useState([])
   const [ready, setReady] = useState({ source: 'GREENHOUSE', boards: '', q: '', results: null })
@@ -333,12 +335,17 @@ export default function App() {
   })
   async function submitAccount(event) {
     event.preventDefault()
-    setForm(current => ({ ...current, busy: true, error: '' }))
+    setForm(current => ({ ...current, busy: true, error: '', notice: '' }))
     try {
-      const user = await request(form.mode === 'signup' ? '/auth/register' : '/auth/login', {
+      if (form.mode === 'forgot') {
+        const reply = await request('/auth/forgot', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: form.email }) })
+        setForm(current => ({ ...current, busy: false, notice: reply.message }))
+        return
+      }
+      await request(form.mode === 'signup' ? '/auth/register' : '/auth/login', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: form.name, email: form.email, password: form.password })
       })
-      setAuth(current => ({ ...current, user })); setMyRepos([])
+      setAuth(await request('/auth/status')); setMyRepos([])
       setForm(current => ({ ...current, password: '', busy: false }))
       request('/jobs').then(setSavedJobs).catch(() => {})
     } catch (error) { setForm(current => ({ ...current, busy: false, error: error.message })) }
@@ -468,15 +475,18 @@ export default function App() {
       {auth.configured && <a className="githubButton big" href={`${API}/auth/github/login`}><Icon name="github" size={18} />Continue with GitHub</a>}
       {auth.configured && <p className="divider"><span>or use an email</span></p>}
       <div className="authTabs" role="tablist">
-        <button type="button" role="tab" aria-selected={form.mode === 'signin'} className={form.mode === 'signin' ? 'on' : ''} onClick={() => setForm({ ...form, mode: 'signin', error: '' })}>Sign in</button>
-        <button type="button" role="tab" aria-selected={form.mode === 'signup'} className={form.mode === 'signup' ? 'on' : ''} onClick={() => setForm({ ...form, mode: 'signup', error: '' })}>Create account</button>
+        <button type="button" role="tab" aria-selected={form.mode === 'signin'} className={form.mode === 'signin' ? 'on' : ''} onClick={() => setForm({ ...form, mode: 'signin', error: '', notice: '' })}>Sign in</button>
+        <button type="button" role="tab" aria-selected={form.mode === 'signup'} className={form.mode === 'signup' ? 'on' : ''} onClick={() => setForm({ ...form, mode: 'signup', error: '', notice: '' })}>Create account</button>
       </div>
       <form className="loginForm" onSubmit={submitAccount}>
         {form.mode === 'signup' && <label>Name<input value={form.name} onChange={event => setForm({ ...form, name: event.target.value })} placeholder="Your name" autoComplete="name" maxLength={80} /></label>}
         <label>Email<input type="email" required value={form.email} onChange={event => setForm({ ...form, email: event.target.value })} placeholder="you@example.com" autoComplete="email" /></label>
-        <label>Password<input type="password" required minLength={form.mode === 'signup' ? 8 : undefined} value={form.password} onChange={event => setForm({ ...form, password: event.target.value })} placeholder={form.mode === 'signup' ? 'At least 8 characters' : 'Your password'} autoComplete={form.mode === 'signup' ? 'new-password' : 'current-password'} maxLength={128} /></label>
+        {form.mode !== 'forgot' && <label>Password<input type="password" required minLength={form.mode === 'signup' ? 8 : undefined} value={form.password} onChange={event => setForm({ ...form, password: event.target.value })} placeholder={form.mode === 'signup' ? 'At least 8 characters' : 'Your password'} autoComplete={form.mode === 'signup' ? 'new-password' : 'current-password'} maxLength={128} /></label>}
         {form.error && <p className="formError" role="alert">{form.error}</p>}
-        <button className="primary" disabled={form.busy}>{form.busy ? 'Please wait…' : form.mode === 'signup' ? 'Create account' : 'Sign in'}</button>
+        {form.notice && <p className="formNotice" role="status">{form.notice}</p>}
+        <button className="primary" disabled={form.busy}>{form.busy ? 'Please wait…' : form.mode === 'signup' ? 'Create account' : form.mode === 'forgot' ? 'Send reset link' : 'Sign in'}</button>
+        {form.mode === 'signin' && auth.passwordReset && <button type="button" className="ghost forgotLink" onClick={() => setForm({ ...form, mode: 'forgot', error: '', notice: '' })}>Forgot your password?</button>}
+        {form.mode === 'forgot' && <button type="button" className="ghost forgotLink" onClick={() => setForm({ ...form, mode: 'signin', error: '', notice: '' })}>Back to sign in</button>}
       </form>
       <button type="button" className="ghost" onClick={continueAsGuest}>Continue without signing in</button>
       <p className="muted small">Email accounts can assess any public repository. Signing in with GitHub also lets you pick your own repositories, include private ones, and open issues.</p>
@@ -494,6 +504,10 @@ export default function App() {
           : auth.configured && <a className="githubButton" href={`${API}/auth/github/login`}><Icon name="github" size={16} />Sign in with GitHub</a>}
       </div>
     </m.nav>
+    {auth.user && auth.emailPending && <div className="verifyBanner" role="status">
+      <span>Confirm your email: we sent a link to {auth.user.login.replace('email:', '')}.</span>
+      <button type="button" className="ghost" disabled={resent} onClick={() => { request('/auth/resend-verification', { method: 'POST' }).then(() => setResent(true)).catch(error => say(error.message, 'error')) }}>{resent ? 'Sent' : 'Resend link'}</button>
+    </div>}
 
     <m.header className="hero" initial={false} animate="show">
       <m.p className="eyebrow" variants={fadeUp}><Icon name="spark" size={14} /> AI Career Coach</m.p>
@@ -637,6 +651,8 @@ export default function App() {
         </m.div>
         {visible.length === 0 && <p className="muted empty">Nothing in this view.</p>}
 
+        {job && <PortfolioPanel key={`${job.id}|${assessment.portfolio.repository}`} job={job} repository={assessment.portfolio.repository} branch={branch} who={auth.user?.login || 'guest'} suggestions={myRepos.map(repo => repo.fullName)} say={say} fail={fail} />}
+
         <GrowthPanel repository={assessment.portfolio.repository} auth={auth} say={say} fail={fail} />
 
         <m.div className="readyJobs card" variants={cardIn} id="ready-jobs">
@@ -662,6 +678,8 @@ export default function App() {
             </m.li>)}</m.ol>}
           {ready.results && <p className="muted small">Quick match from keyword rules across {ready.results.scanned} postings. “Assess me” imports the posting and runs the full AI review with cited evidence.</p>}
         </m.div>
+
+        <ActivityFeed history={history} />
 
         {history.length > 1 && <m.div className="timeline card" variants={cardIn}>
           <h3>Scan history</h3><p className="muted small">Each push creates a new scan. Select one to compare.</p>

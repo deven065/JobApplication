@@ -56,6 +56,8 @@ public class AuthStore {
         return logins.isEmpty() ? Optional.empty() : user(logins.get(0));
     }
     public void signOut(String sessionId) { jdbc.update("DELETE FROM coach_sessions WHERE id = ?", sessionId); }
+    /** Ends every session of one account (used after a password reset). */
+    public void signOutEverywhere(String login) { jdbc.update("DELETE FROM coach_sessions WHERE login = ?", login); }
 
     public Optional<Session> user(String login) {
         return jdbc.query("SELECT payload, token FROM coach_users WHERE login = ?", (row, i) -> {

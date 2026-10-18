@@ -60,6 +60,8 @@ A missing signal means *"not demonstrated in this scan"*. It is never treated as
 | **Demo evidence report** | One click downloads a Markdown report with the job source, repository evidence, gaps, the repository change and the before/after assessment, the evidence the brief asks for. |
 | **Sign in with GitHub** | GitHub OAuth sign-in: pick from your own repositories (private ones too, if you allow it), keep your saved jobs on every device, and scan with your own GitHub rate limit. Tokens are stored encrypted. |
 | **Email accounts** | Sign up and sign in with an email and password (no GitHub needed). Passwords are stored only as salted PBKDF2 hashes, and repeated wrong passwords lock the account for ten minutes. Email accounts can assess any public repository; picking your own repositories, private repositories, opening issues and the public profile need a GitHub sign-in. |
+| **Portfolio of repositories** | Combine up to five repositories for one job. Each requirement takes the best evidence from any of them, cited with its repository, and the combined score is shown next to each repository's own. |
+| **What changed feed** | Lists every skill that moved between scans (Gap → Demonstrated), with the commit and the number of changed files. |
 | **Jobs you're ready for** | Ranks every open posting on the company job boards you choose by how many of its requirements your repository already proves (*"You meet 5 of 6 — missing: SQL"*). One click imports a posting and runs the full assessment. |
 | **Fix this gap** | Opens a GitHub Issue in your own repository with a checklist for the missing skill and starts watching the repository. Close it with a commit and ProofPath re-checks that skill on its own. |
 | **Learning path per gap** | Two official resources, a time estimate, a small proof project and a step checklist for every missing skill. Your progress is remembered in the browser. |
@@ -179,6 +181,15 @@ Free-tier limits change often. Groq's free tier allows few tokens per minute, so
 | `GITHUB_TOKEN` | Optional. Raises GitHub's API rate limit and allows private repositories. Use a fine-grained token with **Contents: Read** (and **Webhooks: Read and write** for automatic webhook creation) |
 | `GITHUB_WEBHOOK_PUBLIC_BASE_URL` | Public HTTPS URL of the backend (for example, a tunnel). Needed only to install a push webhook |
 
+### Account emails (optional)
+
+| Variable | Purpose |
+|---|---|
+| `RESEND_API_KEY` | Free key from [resend.com](https://resend.com). Turns on confirm-your-email and password-reset links |
+| `EMAIL_FROM` | Sender, default `ProofPath <onboarding@resend.dev>`. Resend's test sender only delivers to your own Resend account address, so verify a domain to email other people |
+
+Without a key nothing breaks: new email accounts start verified and the "Forgot your password?" link is hidden.
+
 ### Sign in with GitHub (optional)
 
 | Variable | Purpose |
@@ -281,6 +292,8 @@ Netlify only hosts static files, so the Spring Boot API stays on Render (or any 
 
 Notes: Netlify cuts proxied requests at about 26 seconds, which is enough for an assessment but not for a cold Render start. Open the site once to wake the backend. A GitHub webhook can still point straight at the Render URL (`GITHUB_WEBHOOK_PUBLIC_BASE_URL`).
 
+The repository also ships `.github/workflows/keepalive.yml`, which pings the live site every 10 minutes so Render's free tier does not sleep (free for public repositories). The 5-minute demo script is in [docs/DEMO.md](docs/DEMO.md).
+
 ## Demo walkthrough
 
 1. **Choose a job.** Enter the role, company and the posting's URL, then click **Read job posting**. If the site blocks fetching, paste the posting text; the source URL is still kept. Review the detected skills and their quotes.
@@ -344,6 +357,8 @@ The AI is never the only source of truth. `AssessmentService` checks every resul
 | `GET` | `/api/public/{login}` · `/api/public/{login}/badge.svg?skill=SQL` | Public profile and README badge |
 | `GET` | `/api/jobs/ready?repository=owner/repo&source=GREENHOUSE&boards=stripe,airbnb&q=engineer` | Open postings ranked by how much of each one the repository proves |
 | `POST` | `/api/auth/register` · `/api/auth/login` | Email and password sign-up and sign-in (`{name, email, password}`) |
+| `POST` | `/api/auth/forgot` · `/api/auth/reset` · `/api/auth/verify` · `/api/auth/resend-verification` | Password reset and email confirmation (need `RESEND_API_KEY`) |
+| `GET` | `/api/assessments/combined?jobId=…&repositories=a/b,c/d` | One job judged against several assessed repositories |
 | `GET` | `/api/auth/status` · `/api/me/repos` | Signed-in user and their repositories |
 | `GET` | `/api/auth/github/login` → `/api/auth/github/callback` | GitHub OAuth sign-in (`POST /api/auth/logout` signs out) |
 | `GET` | `/api/jobs/boards?source=GREENHOUSE&board=stripe&q=engineer` | Search a public Greenhouse, Lever or Ashby job board |

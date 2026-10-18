@@ -7,4 +7,5 @@ import org.springframework.web.bind.annotation.GetMapping;
 @Controller
 public class SpaController {
     @GetMapping("/u/{login}") public String profile() { return "forward:/index.html"; }
+    @GetMapping({"/reset", "/verify"}) public String accountLink() { return "forward:/index.html"; }
 }

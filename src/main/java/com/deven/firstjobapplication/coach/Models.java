@@ -60,7 +60,10 @@ public final class Models {
         public AuthUser(String login, String name, String avatarUrl, boolean privateAccess) { this(login, name, avatarUrl, privateAccess, privateAccess, "github"); }
         public AuthUser { if (provider == null || provider.isBlank()) provider = "github"; }
     }
-    public record AuthStatus(boolean configured, AuthUser user) { }
+    /** emailPending: an email account whose address is not confirmed yet. passwordReset: the server can send reset emails. */
+    public record AuthStatus(boolean configured, AuthUser user, boolean emailPending, boolean passwordReset) {
+        public AuthStatus(boolean configured, AuthUser user) { this(configured, user, false, false); }
+    }
     public record RepoSummary(String fullName, boolean privateRepository, String defaultBranch, String language, String description, Instant pushedAt) { }
     /** A posting scored against the skills the student's repository already shows. score is 0–100. */
     public record ReadyJob(JobListing listing, List<Skill> required, List<Skill> met, List<Skill> partial, List<Skill> missing, int score) { }
@@ -78,6 +81,10 @@ public final class Models {
     public record ProfileSkill(Skill skill, String label, String explanation, List<ProfileEvidence> evidence) { }
     public record PublicProfile(String login, String avatarUrl, String repository, String repositoryUrl, String revision,
                                 Instant verifiedAt, List<ProfileSkill> skills, String profileUrl, String badgeMarkdown) { }
+    public record RepoScore(String repository, int readiness) { }
+    /** One job judged against several repositories: the best verdict per requirement, with per-repository scores. */
+    public record CombinedPortfolio(String jobId, List<String> repositories, List<Gap> gaps, int readiness,
+                                    List<RepoScore> perRepository, Map<Skill, List<String>> provenBy) { }
     public record RepoRegistration(String repository, String branch, String webhookSecret) { }
     public record GitHubRepository(String fullName, String defaultBranch, String htmlUrl, boolean privateRepository) { }
     /** revision is the last fully assessed commit; pendingRevision is a newly detected commit still being reassessed. */
