@@ -263,9 +263,22 @@ docker run -p 8081:8081 --env-file .env -e DATABASE_URL=jdbc:postgresql://host.d
 
 Inside a container `localhost` is the container itself, so point `DATABASE_URL` at `host.docker.internal` to reach a PostgreSQL server on your computer. To run the app together with its own PostgreSQL, use `docker compose up --build` (see [Using PostgreSQL](#using-postgresql)).
 
-### Separate frontend (optional)
+### Frontend on Netlify, API on Render
 
-A frontend hosted on its own (for example on Vercel) also works. Build it with `VITE_API_BASE_URL=https://your-backend/api`, and set `FRONTEND_ORIGIN` on the backend to the frontend's URL.
+Netlify only hosts static files, so the Spring Boot API stays on Render (or any host that runs the Docker image) and Netlify serves the React app. `frontend/netlify.toml` forwards `/api/*` to the backend, so the browser sees one origin and the sign-in cookie works.
+
+1. **Netlify:** Add new site → Import from GitHub → pick the repository. Set **Base directory** to `frontend` (build command and publish directory come from `frontend/netlify.toml`). Deploy.
+2. **Render environment** (Environment tab of the service), then redeploy:
+
+| Variable | Value |
+|---|---|
+| `APP_BASE_URL` | `https://proofpath-ai.netlify.app` |
+| `FRONTEND_ORIGIN` | `https://proofpath-ai.netlify.app` |
+
+3. **GitHub OAuth App:** set the homepage URL to the Netlify URL and add the redirect URI `https://proofpath-ai.netlify.app/api/auth/github/callback`.
+4. If your Render URL is not `https://proofpath-8r5b.onrender.com`, change the `to` URL in `frontend/netlify.toml`.
+
+Notes: Netlify cuts proxied requests at about 26 seconds, which is enough for an assessment but not for a cold Render start. Open the site once to wake the backend. A GitHub webhook can still point straight at the Render URL (`GITHUB_WEBHOOK_PUBLIC_BASE_URL`).
 
 ## Demo walkthrough
 
