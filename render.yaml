@@ -21,7 +21,9 @@ services:
         sync: false
       - key: GITHUB_OAUTH_CLIENT_SECRET
         sync: false
-      - key: APP_BASE_URL             # e.g. https://proofpath-8r5b.onrender.com (OAuth callback base)
-        sync: false
+      - key: APP_BASE_URL             # the site people open: https://proofpath-ai.netlify.app (OAuth callback and profile links)
+        value: https://proofpath-ai.netlify.app
+      - key: FRONTEND_ORIGIN          # Netlify forwards the browser's Origin header, so the backend must allow it
+        value: https://proofpath-ai.netlify.app
       - key: SESSION_SECRET           # long random string that encrypts stored GitHub tokens
         generateValue: true
