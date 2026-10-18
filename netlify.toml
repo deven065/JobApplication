@@ -1,0 +1,22 @@
+# Netlify serves the React app from the frontend/ folder. The Spring Boot API stays on Render, and Netlify
+# forwards /api/* to it, so the browser only talks to the Netlify domain (same origin: the sign-in cookie just works).
+# Leave "Base directory" empty in the Netlify site settings; this file is read from the repository root.
+[build]
+  command = "npm --prefix frontend ci --no-audit --no-fund && npm --prefix frontend run build"
+  publish = "frontend/dist"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# API calls are proxied (status 200 = rewrite, not a redirect). Change the target if your Render URL differs.
+[[redirects]]
+  from = "/api/*"
+  to = "https://proofpath-8r5b.onrender.com/api/:splat"
+  status = 200
+  force = true
+
+# Single-page app: /u/<login> and any other path serve the app shell.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
