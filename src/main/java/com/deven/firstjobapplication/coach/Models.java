@@ -54,6 +54,13 @@ public final class Models {
     /** A posting listed on a public job board (Greenhouse, Lever or Ashby). */
     public record JobListing(String source, String board, String id, String title, String company, String location, String url) { }
     public record JobBoardResults(String source, String board, String company, int total, List<JobListing> jobs) { }
+    /** The signed-in GitHub user. privateAccess is true when they granted the repo scope. */
+    public record AuthUser(String login, String name, String avatarUrl, boolean privateAccess) { }
+    public record AuthStatus(boolean configured, AuthUser user) { }
+    public record RepoSummary(String fullName, boolean privateRepository, String defaultBranch, String language, String description, Instant pushedAt) { }
+    /** A posting scored against the skills the student's repository already shows. score is 0–100. */
+    public record ReadyJob(JobListing listing, List<Skill> required, List<Skill> met, List<Skill> partial, List<Skill> missing, int score) { }
+    public record ReadyJobResults(String repository, String revision, int scanned, List<ReadyJob> jobs, List<String> warnings) { }
     public record RepoRegistration(String repository, String branch, String webhookSecret) { }
     public record GitHubRepository(String fullName, String defaultBranch, String htmlUrl, boolean privateRepository) { }
     /** revision is the last fully assessed commit; pendingRevision is a newly detected commit still being reassessed. */

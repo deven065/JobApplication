@@ -17,3 +17,11 @@ services:
         sync: false
       - key: GITHUB_WEBHOOK_PUBLIC_BASE_URL   # optional, set to this service's https://….onrender.com URL
         sync: false
+      - key: GITHUB_OAUTH_CLIENT_ID   # optional, enables "Sign in with GitHub"
+        sync: false
+      - key: GITHUB_OAUTH_CLIENT_SECRET
+        sync: false
+      - key: APP_BASE_URL             # e.g. https://proofpath-8r5b.onrender.com (OAuth callback base)
+        sync: false
+      - key: SESSION_SECRET           # long random string that encrypts stored GitHub tokens
+        generateValue: true

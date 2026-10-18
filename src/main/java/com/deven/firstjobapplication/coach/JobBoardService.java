@@ -98,6 +98,42 @@ public class JobBoardService {
         };
     }
 
+    /** A listing with its full description, for ranking many postings without fetching each one. */
+    public record ListingWithText(JobListing listing, String text) { }
+
+    /** Every open posting on one board with its description: one request per board on all three APIs. */
+    public List<ListingWithText> listingsWithText(String source, String board, String query) {
+        Source s = source(source);
+        String slug = board(board);
+        String q = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
+        List<ListingWithText> all = new ArrayList<>();
+        switch (s) {
+            case GREENHOUSE -> {
+                for (JsonNode job : get("https://boards-api.greenhouse.io/v1/boards/" + slug + "/jobs?content=true").path("jobs"))
+                    all.add(new ListingWithText(new JobListing(s.name(), slug, job.path("id").asText(), text(job, "title", "Untitled role"),
+                            text(job, "company_name", pretty(slug)), text(job.path("location"), "name", ""), text(job, "absolute_url", "")),
+                            plain(HtmlUtils.htmlUnescape(text(job, "content", "")))));
+            }
+            case LEVER -> {
+                for (JsonNode job : get("https://api.lever.co/v0/postings/" + slug + "?mode=json&limit=200")) {
+                    StringBuilder body = new StringBuilder(text(job, "descriptionPlain", ""));
+                    for (JsonNode list : job.path("lists")) body.append(' ').append(text(list, "text", "")).append(' ').append(plain(text(list, "content", "")));
+                    body.append(' ').append(text(job, "additionalPlain", ""));
+                    all.add(new ListingWithText(new JobListing(s.name(), slug, job.path("id").asText(), text(job, "text", "Untitled role"),
+                            pretty(slug), text(job.path("categories"), "location", ""), text(job, "hostedUrl", "")), body.toString()));
+                }
+            }
+            case ASHBY -> {
+                for (JsonNode job : get("https://api.ashbyhq.com/posting-api/job-board/" + slug).path("jobs"))
+                    if (job.path("isListed").asBoolean(true))
+                        all.add(new ListingWithText(new JobListing(s.name(), slug, job.path("id").asText(), text(job, "title", "Untitled role"),
+                                pretty(slug), text(job, "location", ""), text(job, "jobUrl", "")), text(job, "descriptionPlain", "")));
+            }
+        }
+        return all.stream().filter(item -> q.isEmpty() || (item.listing().title() + " " + item.listing().location()).toLowerCase(Locale.ROOT).contains(q)).toList();
+    }
+    private static String plain(String html) { return html.replaceAll("(?is)<[^>]+>", " ").replaceAll("\\s+", " ").trim(); }
+
     private List<JobListing> greenhouseList(String slug) {
         JsonNode root = get("https://boards-api.greenhouse.io/v1/boards/" + slug + "/jobs");
         List<JobListing> jobs = new ArrayList<>();
