@@ -55,7 +55,8 @@ public class AuthController {
 
     @GetMapping("/auth/status") public AuthStatus status() {
         String login = GitHubCredentials.login();
-        return new AuthStatus(configured(), login == null ? null : auth.user(login).map(AuthStore.Session::user).orElse(null));
+        return new AuthStatus(configured(), login == null ? null : auth.user(login).map(AuthStore.Session::user).orElse(null),
+                accounts.unverified(login), accounts.resetAvailable());
     }
 
     /** Starts sign-in. private=true also asks for the repo scope so private repositories can be assessed. */
@@ -116,6 +117,24 @@ public class AuthController {
         ResponseCookie cookie = ResponseCookie.from(SessionFilter.COOKIE, signed.sessionId()).httpOnly(true).secure(secure())
                 .sameSite("Lax").path("/").maxAge(Duration.ofDays(30)).build();
         return ResponseEntity.ok().header(HttpHeaders.SET_COOKIE, cookie.toString()).body(signed.user());
+    }
+
+    public record ForgotRequest(String email) { }
+    public record ResetRequest(String token, String password) { }
+    public record TokenRequest(String token) { }
+
+    /** Always answers the same way, whether or not the address has an account. */
+    @PostMapping("/auth/forgot") public Map<String, Object> forgot(@RequestBody ForgotRequest body) {
+        accounts.requestReset(body.email());
+        return Map.of("sent", accounts.resetAvailable(), "message", accounts.resetAvailable()
+                ? "If that email has an account, a reset link is on its way." : "Password reset by email is not set up on this server.");
+    }
+    @PostMapping("/auth/reset") public ResponseEntity<AuthUser> reset(@RequestBody ResetRequest body) { return signedIn(accounts.resetPassword(body.token(), body.password())); }
+    @PostMapping("/auth/verify") public Map<String, Object> verify(@RequestBody TokenRequest body) { accounts.verifyEmail(body.token()); return Map.of("verified", true); }
+    @PostMapping("/auth/resend-verification") public Map<String, Object> resend() {
+        String login = GitHubCredentials.login();
+        if (login == null) throw new SecurityException("Sign in first.");
+        return Map.of("sent", accounts.resendVerification(login));
     }
 
     @PostMapping("/auth/logout") public ResponseEntity<Void> logout(HttpServletRequest request) {

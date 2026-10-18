@@ -119,6 +119,15 @@ public class CareerCoachController {
     @PostMapping("/assessments") public Assessment assess(@RequestBody AssessRequest body) {
         return assessments.assess(accessible(body.jobId()), body.repository(), body.branch());
     }
+    /** The job judged against several already-assessed repositories at once (the best evidence per requirement wins). */
+    @GetMapping("/assessments/combined") public CombinedPortfolio combined(@RequestParam String jobId, @RequestParam String repositories) {
+        JobRequirement job = accessible(jobId);
+        List<String> names = Arrays.stream(repositories.split(",")).map(String::trim).filter(n -> !n.isEmpty()).distinct().limit(5).toList();
+        List<Assessment> found = new ArrayList<>();
+        for (String name : names)
+            found.add(assessments.latestAssessment(jobId, name).orElseThrow(() -> new NoSuchElementException(name + " has not been assessed against this job yet.")));
+        return PortfolioMerger.merge(job, found);
+    }
     @GetMapping("/repositories/resolve") public GitHubRepository resolveRepository(@RequestParam String repository) { return github.repository(repository); }
     @GetMapping("/repositories/watch") public WatchStatus watchStatus(@RequestParam String repository) {
         RepoRegistration watch = assessments.watch(repository)

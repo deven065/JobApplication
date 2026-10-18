@@ -417,3 +417,31 @@ a.metaItem:hover { color: var(--link); }
 .loginForm { width: 100%; text-align: left; display: grid; gap: 2px; }
 .loginForm .primary { margin-top: 16px; justify-content: center; }
 .formError { margin: 12px 0 0; padding: 9px 12px; border-radius: var(--radius-sm); background: var(--gap-bg); color: var(--gap); font-size: .85rem; line-height: 1.4; }
+
+/* Verify banner, forgot password, activity feed, portfolio */
+.verifyBanner { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px 14px; margin: 10px auto 0; max-width: 1100px; padding: 10px 16px; border-radius: var(--radius-sm); background: var(--warn-bg); color: var(--warn); font-size: .88rem; font-weight: 600; }
+.formNotice { margin: 12px 0 0; padding: 9px 12px; border-radius: var(--radius-sm); background: var(--good-bg); color: var(--good); font-size: .85rem; line-height: 1.4; }
+.forgotLink { justify-self: center; margin-top: 8px; }
+.brandLink { font-family: var(--serif); font-weight: 700; font-size: 1.3rem; color: var(--ink); text-decoration: none; }
+.activity, .portfolio { margin-top: 20px; }
+.activity h3, .portfolio h3 { margin: 0 0 4px; font-family: var(--serif); color: var(--ink); }
+.activityList { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 12px; }
+.activityList li { display: flex; gap: 12px; align-items: flex-start; }
+.activityList li > div { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; font-size: .9rem; }
+.activityDot { flex: none; width: 10px; height: 10px; margin-top: 6px; border-radius: 50%; background: var(--gap); }
+.activityDot[data-up="true"] { background: var(--good); }
+.repoChips { list-style: none; margin: 14px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.repoChips li { margin: 0; display: inline-flex; align-items: center; gap: 6px; }
+.repoChips button { padding: 0 4px; border: 0; background: transparent; color: var(--muted); font-size: 1rem; line-height: 1; }
+.portfolioAdd { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; align-items: center; }
+.portfolioAdd input { flex: 1 1 220px; margin: 0; width: auto; }
+.combined { margin-top: 18px; display: grid; gap: 14px; }
+.combinedScore { display: flex; align-items: baseline; gap: 10px; }
+.combinedScore strong { font-family: var(--serif); font-size: 2.4rem; color: var(--primary); }
+.combinedScore span { color: var(--muted); font-size: .85rem; }
+.repoScores, .combinedSkills { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.repoScores li { display: flex; justify-content: space-between; gap: 12px; font-size: .88rem; padding: 8px 12px; border-radius: var(--radius-sm); background: var(--surface-2); overflow-wrap: anywhere; }
+.combinedSkills li { padding: 12px 14px; border-radius: var(--radius-sm); background: var(--surface-2); min-width: 0; overflow-wrap: anywhere; }
+.combinedSkills li > div { display: flex; align-items: center; gap: 8px; }
+.combinedSkills p { margin: 6px 0; }
+.combinedSkills a { display: block; color: var(--link); font-weight: 600; font-size: .85rem; }

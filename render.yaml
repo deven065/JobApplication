@@ -25,5 +25,9 @@ services:
         value: https://proofpath-ai.netlify.app
       - key: FRONTEND_ORIGIN          # Netlify forwards the browser's Origin header, so the backend must allow it
         value: https://proofpath-ai.netlify.app
+      - key: RESEND_API_KEY           # optional: enables confirm-your-email and password-reset emails (free at resend.com)
+        sync: false
+      - key: EMAIL_FROM               # optional sender, e.g. ProofPath <hello@yourdomain.com> once the domain is verified in Resend
+        sync: false
       - key: SESSION_SECRET           # long random string that encrypts stored GitHub tokens
         generateValue: true
