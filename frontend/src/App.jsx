@@ -1,6 +1,7 @@
 import { forwardRef, useEffect, useRef, useState } from 'react'
 import { AnimatePresence, LazyMotion, MotionConfig, m } from 'framer-motion'
 import { CountUp, cardIn, ease, fadeUp, spotlight, spring, stagger } from './motion.jsx'
+import { GrowthPanel, LearningPlan } from './Growth.jsx'
 
 const API = import.meta.env.VITE_API_BASE_URL || '/api'
 const SKILLS = ['JAVA', 'SPRING_BOOT', 'REST_API', 'SQL', 'POSTGRESQL', 'REACT', 'DOCKER', 'TESTING', 'GIT']
@@ -151,7 +152,7 @@ function Confidence({ level }) {
     <m.i key={bar} className={bar <= filled ? 'on' : ''} initial={{ scaleY: 0 }} animate={{ scaleY: 1 }} transition={{ delay: 0.35 + bar * 0.08, ...spring }} />)}<em>{level.toLowerCase()}</em></span>
 }
 
-const SkillCard = forwardRef(function SkillCard({ gap, change, recheck, changedPaths }, ref) {
+const SkillCard = forwardRef(function SkillCard({ gap, change, recheck, changedPaths, learning, fix }, ref) {
   const status = statusOf(gap)
   const rejected = gap.status === 'NOT_DEMONSTRATED' && gap.evidence.length > 0
   return <m.article ref={ref} layout variants={cardIn} initial="hidden" animate="show" exit="exit" whileHover={{ y: -5 }} transition={spring}
@@ -165,6 +166,15 @@ const SkillCard = forwardRef(function SkillCard({ gap, change, recheck, changedP
     </header>
     <p className="explain">{gap.explanation}</p>
     {gap.status !== 'DEMONSTRATED' && <div className="nextStep"><Icon name="bolt" size={15} /><p><strong>Build next</strong>{gap.nextStep || NEXT[gap.skill]}</p></div>}
+    {gap.status !== 'DEMONSTRATED' && fix && <div className="fixRow">
+      {fix.issue
+        ? <a className="secondary linkButton" href={fix.issue.url} target="_blank" rel="noreferrer"><Icon name="github" size={15} />{fix.issue.alreadyOpen ? 'Issue already open' : 'Issue created'} #{fix.issue.number}</a>
+        : <button type="button" className="primary" disabled={fix.busy} onClick={() => fix.run(gap)}><Icon name="github" size={15} />Fix this gap</button>}
+      {fix.issue
+        ? <span className="muted small">Close it with a commit and ProofPath re-checks {pretty(gap.skill)} on its own.</span>
+        : fix.hint}
+    </div>}
+    {gap.status !== 'DEMONSTRATED' && learning && <LearningPlan path={learning} who={fix?.who || 'guest'} />}
     {gap.evidence.length > 0 && <details className="evidenceList" open={gap.status !== 'NOT_DEMONSTRATED'}>
       <summary>{rejected ? `${gap.evidence.length} keyword signal${gap.evidence.length > 1 ? 's' : ''} reviewed, not accepted` : `${gap.evidence.length} cited file${gap.evidence.length > 1 ? 's' : ''}`}</summary>
       {gap.evidence.map(evidence => <div className="evidence" key={evidence.url}>
@@ -200,6 +210,9 @@ export default function App() {
   const [boardResults, setBoardResults] = useState(null)
   const [ai, setAi] = useState(null)
   const [auth, setAuth] = useState({ configured: false, user: null })
+  const [paths, setPaths] = useState({})
+  const [issues, setIssues] = useState({})
+  const [fixing, setFixing] = useState(false)
   const [authChecked, setAuthChecked] = useState(false)
   const [guest, setGuest] = useState(() => { try { return sessionStorage.getItem('pp_guest') === '1' } catch { return false } })
   const continueAsGuest = () => { try { sessionStorage.setItem('pp_guest', '1') } catch { /* private mode */ } setGuest(true) }
@@ -214,6 +227,8 @@ export default function App() {
   const fail = error => say(error.message, 'error')
 
   useEffect(() => { request('/ai/status').then(setAi).catch(() => setAi(null)) }, [])
+
+  useEffect(() => { request('/learning-paths').then(list => setPaths(Object.fromEntries(list.map(path => [path.skill, path])))).catch(() => {}) }, [])
 
   // GitHub sign-in: status, the result of the OAuth redirect, and the user's repositories.
   useEffect(() => {
@@ -298,6 +313,22 @@ export default function App() {
       say(found.total ? `${found.total} open posting${found.total > 1 ? 's' : ''} at ${found.company}${found.total > found.jobs.length ? `; showing the first ${found.jobs.length}` : ''}. Pick one to import.` : `No postings at ${found.company} match "${boardQuery.q}".`, found.total ? 'success' : 'warn')
     } catch (error) { setBoardResults(null); fail(error) } finally { setBusy('') }
   }
+  const issueKey = gap => `${job?.id}|${assessment?.portfolio.repository}|${gap.skill}`
+  async function fixGap(gap) {
+    if (!auth.user) return say('Sign in with GitHub first. ProofPath opens the issue in your own repository, as you.', 'warn')
+    setFixing(true)
+    try {
+      const issue = await request('/gaps/issue', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jobId: job.id, repository: assessment.portfolio.repository, skill: gap.skill }) })
+      setIssues(current => ({ ...current, [issueKey(gap)]: issue }))
+      if (issue.watching) setWatching(true)
+      say(`${issue.alreadyOpen ? 'Issue already open' : 'Issue created'}: #${issue.number} in ${assessment.portfolio.repository}. Close it with a commit and ProofPath re-checks ${pretty(gap.skill)}.`, 'success')
+    } catch (error) { fail(error) } finally { setFixing(false) }
+  }
+  const fixFor = gap => ({
+    run: fixGap, busy: fixing, issue: issues[issueKey(gap)], who: auth.user?.login || 'guest',
+    hint: !auth.user ? <span className="muted small">Sign in with GitHub to open this as an issue in your repository.</span>
+      : !auth.user.issueAccess ? <a className="small" href={`${API}/auth/github/login?issues=true`}>Allow ProofPath to open issues</a> : null
+  })
   async function signOut() {
     try { await request('/auth/logout', { method: 'POST' }) } catch { /* already signed out */ }
     setAuth(current => ({ ...current, user: null })); setMyRepos([]); setSavedJobs([]); setJob(null); setAssessment(null); setHistory([])
@@ -578,9 +609,11 @@ export default function App() {
         </m.div>
         <m.p className="muted small disclaimer" variants={fadeUp}>A missing signal means only that this scan did not find evidence, not that you lack the skill. Every positive verdict cites a file at the scanned commit.</m.p>
         <m.div className="skills" layout variants={stagger(0.07)}>
-          <AnimatePresence mode="popLayout">{visible.map(gap => <SkillCard key={gap.skill} gap={gap} change={changes[gap.skill]} recheck={recheckOf(gap.skill)} changedPaths={changedPaths} />)}</AnimatePresence>
+          <AnimatePresence mode="popLayout">{visible.map(gap => <SkillCard key={gap.skill} gap={gap} change={changes[gap.skill]} recheck={recheckOf(gap.skill)} changedPaths={changedPaths} learning={paths[gap.skill]} fix={fixFor(gap)} />)}</AnimatePresence>
         </m.div>
         {visible.length === 0 && <p className="muted empty">Nothing in this view.</p>}
+
+        <GrowthPanel repository={assessment.portfolio.repository} auth={auth} say={say} fail={fail} />
 
         <m.div className="readyJobs card" variants={cardIn} id="ready-jobs">
           <div className="changeHead"><span className="summaryIcon"><Icon name="target" size={18} /></span><div><h3>Jobs you're ready for</h3>

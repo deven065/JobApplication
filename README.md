@@ -60,6 +60,11 @@ A missing signal means *"not demonstrated in this scan"*. It is never treated as
 | **Demo evidence report** | One click downloads a Markdown report with the job source, repository evidence, gaps, the repository change and the before/after assessment, the evidence the brief asks for. |
 | **Sign in with GitHub** | GitHub OAuth sign-in: pick from your own repositories (private ones too, if you allow it), keep your saved jobs on every device, and scan with your own GitHub rate limit. Tokens are stored encrypted. |
 | **Jobs you're ready for** | Ranks every open posting on the company job boards you choose by how many of its requirements your repository already proves (*"You meet 5 of 6 — missing: SQL"*). One click imports a posting and runs the full assessment. |
+| **Fix this gap** | Opens a GitHub Issue in your own repository with a checklist for the missing skill and starts watching the repository. Close it with a commit and ProofPath re-checks that skill on its own. |
+| **Learning path per gap** | Two official resources, a time estimate, a small proof project and a step checklist for every missing skill. Your progress is remembered in the browser. |
+| **Interview prep from your code** | Questions about the files you actually wrote (AI-written when a key is set, otherwise templates that quote your code), each with what a strong answer covers. |
+| **Public verified-skills profile** | A shareable page at `/u/<github-login>` listing each demonstrated skill with links to the exact files (pinned to the scanned commit), plus a README badge. Only public repositories you own can be published. |
+| **Evidence-backed resume bullets** | Bullets written only from demonstrated skills, each naming its file. Copy them or save as PDF. |
 | **History** | Every assessment is stored, so you can compare before and after a commit. |
 | **Free AI options** | Works with free **Groq** or **Google Gemini** keys, or with **Anthropic Claude**. Without a key it falls back to keyword rules. |
 
@@ -180,6 +185,8 @@ Free-tier limits change often. Groq's free tier allows few tokens per minute, so
 | `GITHUB_OAUTH_CLIENT_ID` / `GITHUB_OAUTH_CLIENT_SECRET` | From a GitHub **OAuth App** (github.com → Settings → Developer settings → OAuth Apps → New) |
 | `APP_BASE_URL` | Where users open the app; the OAuth callback is `{APP_BASE_URL}/api/auth/github/callback`. Local: `http://localhost:5173`. Render: `https://proofpath-8r5b.onrender.com` |
 | `SESSION_SECRET` | Long random string that encrypts stored GitHub tokens (`render.yaml` generates one) |
+
+Opening issues needs one more permission: the sign-in screen's *Allow ProofPath to open issues* link asks for GitHub's `public_repo` scope (or `repo` together with private-repository access). In the OAuth App settings, untick *Expire user access tokens* so tokens do not lapse after 8 hours.
 
 GitHub allows one callback URL per OAuth App, so create **two apps**: one with callback `http://localhost:5173/api/auth/github/callback` for development and one with your Render URL for production. Sign-in asks only for `read:user`; *Include private repositories* additionally asks for `repo`. Without these variables the app works as before and the sign-in button is hidden.
 
@@ -315,6 +322,12 @@ The AI is never the only source of truth. `AssessmentService` checks every resul
 | `GET` | `/api/repositories/watch` | Current watch status |
 | `POST` | `/api/webhooks/github` | Signed GitHub push callback |
 | `GET` | `/api/ai/status` | Active AI provider and model |
+| `POST` | `/api/gaps/issue` | Opens a GitHub issue with a checklist for one gap (signed in) and watches the repository |
+| `GET` | `/api/learning-paths` | Resources, estimate, project and steps per skill |
+| `GET` | `/api/interview?repository=owner/repo` | Interview questions about the repository's cited files |
+| `GET` | `/api/resume?repository=owner/repo` | Resume bullets from demonstrated skills only |
+| `GET` `POST` | `/api/profile` · `/api/profile/publish` · `/api/profile/unpublish` | Manage your public profile (signed in) |
+| `GET` | `/api/public/{login}` · `/api/public/{login}/badge.svg?skill=SQL` | Public profile and README badge |
 | `GET` | `/api/jobs/ready?repository=owner/repo&source=GREENHOUSE&boards=stripe,airbnb&q=engineer` | Open postings ranked by how much of each one the repository proves |
 | `GET` | `/api/auth/status` · `/api/me/repos` | Signed-in user and their repositories |
 | `GET` | `/api/auth/github/login` → `/api/auth/github/callback` | GitHub OAuth sign-in (`POST /api/auth/logout` signs out) |

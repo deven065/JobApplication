@@ -55,12 +55,27 @@ public final class Models {
     public record JobListing(String source, String board, String id, String title, String company, String location, String url) { }
     public record JobBoardResults(String source, String board, String company, int total, List<JobListing> jobs) { }
     /** The signed-in GitHub user. privateAccess is true when they granted the repo scope. */
-    public record AuthUser(String login, String name, String avatarUrl, boolean privateAccess) { }
+    public record AuthUser(String login, String name, String avatarUrl, boolean privateAccess, boolean issueAccess) {
+        public AuthUser(String login, String name, String avatarUrl, boolean privateAccess) { this(login, name, avatarUrl, privateAccess, privateAccess); }
+    }
     public record AuthStatus(boolean configured, AuthUser user) { }
     public record RepoSummary(String fullName, boolean privateRepository, String defaultBranch, String language, String description, Instant pushedAt) { }
     /** A posting scored against the skills the student's repository already shows. score is 0–100. */
     public record ReadyJob(JobListing listing, List<Skill> required, List<Skill> met, List<Skill> partial, List<Skill> missing, int score) { }
     public record ReadyJobResults(String repository, String revision, int scanned, List<ReadyJob> jobs, List<String> warnings) { }
+    /** A GitHub issue ProofPath opened (or found already open) for a gap. */
+    public record IssueResult(int number, String url, String title, boolean alreadyOpen, boolean watching) { }
+    public record LearningResource(String title, String url, String kind) { }
+    /** A short plan for one skill: what to read, how long it takes and a small project that proves it. */
+    public record LearningPath(Skill skill, String label, String estimate, List<LearningResource> resources, String project, List<String> steps) { }
+    public record InterviewQuestion(Skill skill, String question, String path, String url, String lookFor) { }
+    public record InterviewPrep(String repository, String revision, String generatedBy, List<InterviewQuestion> questions) { }
+    public record ResumeBullet(Skill skill, String text, String path, String url) { }
+    public record ResumeDraft(String repository, String revision, String projectLine, List<ResumeBullet> bullets, List<Skill> notYetProven) { }
+    public record ProfileEvidence(String path, String url, String reason) { }
+    public record ProfileSkill(Skill skill, String label, String explanation, List<ProfileEvidence> evidence) { }
+    public record PublicProfile(String login, String avatarUrl, String repository, String repositoryUrl, String revision,
+                                Instant verifiedAt, List<ProfileSkill> skills, String profileUrl, String badgeMarkdown) { }
     public record RepoRegistration(String repository, String branch, String webhookSecret) { }
     public record GitHubRepository(String fullName, String defaultBranch, String htmlUrl, boolean privateRepository) { }
     /** revision is the last fully assessed commit; pendingRevision is a newly detected commit still being reassessed. */
