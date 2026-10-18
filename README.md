@@ -265,9 +265,9 @@ Inside a container `localhost` is the container itself, so point `DATABASE_URL` 
 
 ### Frontend on Netlify, API on Render
 
-Netlify only hosts static files, so the Spring Boot API stays on Render (or any host that runs the Docker image) and Netlify serves the React app. `frontend/netlify.toml` forwards `/api/*` to the backend, so the browser sees one origin and the sign-in cookie works.
+Netlify only hosts static files, so the Spring Boot API stays on Render (or any host that runs the Docker image) and Netlify serves the React app. `netlify.toml` forwards `/api/*` to the backend, so the browser sees one origin and the sign-in cookie works.
 
-1. **Netlify:** Add new site → Import from GitHub → pick the repository. Set **Base directory** to `frontend` (build command and publish directory come from `frontend/netlify.toml`). Deploy.
+1. **Netlify:** Add new site → Import from GitHub → pick the repository. Leave **Base directory**, build command and publish directory empty: everything comes from `netlify.toml` in the repository root. Deploy.
 2. **Render environment** (Environment tab of the service), then redeploy:
 
 | Variable | Value |
@@ -276,7 +276,7 @@ Netlify only hosts static files, so the Spring Boot API stays on Render (or any 
 | `FRONTEND_ORIGIN` | `https://proofpath-ai.netlify.app` |
 
 3. **GitHub OAuth App:** set the homepage URL to the Netlify URL and add the redirect URI `https://proofpath-ai.netlify.app/api/auth/github/callback`.
-4. If your Render URL is not `https://proofpath-8r5b.onrender.com`, change the `to` URL in `frontend/netlify.toml`.
+4. If your Render URL is not `https://proofpath-8r5b.onrender.com`, change the `to` URL in `netlify.toml`.
 
 Notes: Netlify cuts proxied requests at about 26 seconds, which is enough for an assessment but not for a cold Render start. Open the site once to wake the backend. A GitHub webhook can still point straight at the Render URL (`GITHUB_WEBHOOK_PUBLIC_BASE_URL`).
 
