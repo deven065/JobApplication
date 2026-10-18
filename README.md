@@ -58,6 +58,8 @@ A missing signal means *"not demonstrated in this scan"*. It is never treated as
 | **Gap explanations** | A summary of how well the repository fits the role, plus a small, practical project suggestion for each gap. |
 | **Automatic change detection** | Polls GitHub every minute, or receives a signed GitHub **push webhook**, then rescans automatically. GitHub's compare API lists the changed files, and **only the skills those files affect are reassessed**; the rest keep their verdicts. Evidence from the commit is tagged *changed in this commit*. No manual refresh. |
 | **Demo evidence report** | One click downloads a Markdown report with the job source, repository evidence, gaps, the repository change and the before/after assessment, the evidence the brief asks for. |
+| **Sign in with GitHub** | GitHub OAuth sign-in: pick from your own repositories (private ones too, if you allow it), keep your saved jobs on every device, and scan with your own GitHub rate limit. Tokens are stored encrypted. |
+| **Jobs you're ready for** | Ranks every open posting on the company job boards you choose by how many of its requirements your repository already proves (*"You meet 5 of 6 — missing: SQL"*). One click imports a posting and runs the full assessment. |
 | **History** | Every assessment is stored, so you can compare before and after a commit. |
 | **Free AI options** | Works with free **Groq** or **Google Gemini** keys, or with **Anthropic Claude**. Without a key it falls back to keyword rules. |
 
@@ -170,6 +172,16 @@ Free-tier limits change often. Groq's free tier allows few tokens per minute, so
 |---|---|
 | `GITHUB_TOKEN` | Optional. Raises GitHub's API rate limit and allows private repositories. Use a fine-grained token with **Contents: Read** (and **Webhooks: Read and write** for automatic webhook creation) |
 | `GITHUB_WEBHOOK_PUBLIC_BASE_URL` | Public HTTPS URL of the backend (for example, a tunnel). Needed only to install a push webhook |
+
+### Sign in with GitHub (optional)
+
+| Variable | Purpose |
+|---|---|
+| `GITHUB_OAUTH_CLIENT_ID` / `GITHUB_OAUTH_CLIENT_SECRET` | From a GitHub **OAuth App** (github.com → Settings → Developer settings → OAuth Apps → New) |
+| `APP_BASE_URL` | Where users open the app; the OAuth callback is `{APP_BASE_URL}/api/auth/github/callback`. Local: `http://localhost:5173`. Render: `https://proofpath-8r5b.onrender.com` |
+| `SESSION_SECRET` | Long random string that encrypts stored GitHub tokens (`render.yaml` generates one) |
+
+GitHub allows one callback URL per OAuth App, so create **two apps**: one with callback `http://localhost:5173/api/auth/github/callback` for development and one with your Render URL for production. Sign-in asks only for `read:user`; *Include private repositories* additionally asks for `repo`. Without these variables the app works as before and the sign-in button is hidden.
 
 ### Database
 
@@ -303,6 +315,9 @@ The AI is never the only source of truth. `AssessmentService` checks every resul
 | `GET` | `/api/repositories/watch` | Current watch status |
 | `POST` | `/api/webhooks/github` | Signed GitHub push callback |
 | `GET` | `/api/ai/status` | Active AI provider and model |
+| `GET` | `/api/jobs/ready?repository=owner/repo&source=GREENHOUSE&boards=stripe,airbnb&q=engineer` | Open postings ranked by how much of each one the repository proves |
+| `GET` | `/api/auth/status` · `/api/me/repos` | Signed-in user and their repositories |
+| `GET` | `/api/auth/github/login` → `/api/auth/github/callback` | GitHub OAuth sign-in (`POST /api/auth/logout` signs out) |
 | `GET` | `/api/jobs/boards?source=GREENHOUSE&board=stripe&q=engineer` | Search a public Greenhouse, Lever or Ashby job board |
 | `POST` | `/api/jobs/import` | Import one board posting (`source`, `board`, `jobId`) with its source link |
 

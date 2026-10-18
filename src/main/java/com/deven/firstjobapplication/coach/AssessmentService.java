@@ -199,6 +199,10 @@ public class AssessmentService {
         }
     }
     public Optional<String> pendingRevision(String repository) { return Optional.ofNullable(pendingRevisions.get(repoKey(repository))); }
+    /** The current assessment of this repository for every job it has been assessed against. */
+    public List<Assessment> latestForRepository(String repository) {
+        return latestAssessments.values().stream().filter(a -> a.portfolio().repository().equalsIgnoreCase(repository.trim())).toList();
+    }
     public Optional<Assessment> latestAssessment(String jobId, String repository) { return Optional.ofNullable(latestAssessments.get(key(jobId, repository))); }
     public List<Assessment> history(String jobId, String repository) { return store.history(key(jobId, repository)); }
     public void invalidateJob(String jobId) {

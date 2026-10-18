@@ -1,6 +1,6 @@
 import { forwardRef, useEffect, useRef, useState } from 'react'
 import { AnimatePresence, LazyMotion, MotionConfig, m } from 'framer-motion'
-import { Confetti, CountUp, cardIn, ease, fadeUp, spotlight, spring, stagger } from './motion.jsx'
+import { CountUp, cardIn, ease, fadeUp, spotlight, spring, stagger } from './motion.jsx'
 
 const API = import.meta.env.VITE_API_BASE_URL || '/api'
 const SKILLS = ['JAVA', 'SPRING_BOOT', 'REST_API', 'SQL', 'POSTGRESQL', 'REACT', 'DOCKER', 'TESTING', 'GIT']
@@ -122,7 +122,10 @@ const ICONS = {
   arrow: <path d="M5 12h14M13 6l6 6-6 6" />,
   quote: <path d="M7 7h4v4c0 3-1.5 5-4 6M15 7h4v4c0 3-1.5 5-4 6" />,
   file: <><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5" /></>,
-  bolt: <path d="M13 2 4 14h7l-1 8 9-12h-7z" />
+  bolt: <path d="M13 2 4 14h7l-1 8 9-12h-7z" />,
+  github: <path d="M9 19c-4.3 1.4-4.3-2.5-6-3m12 5v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.2s-1.1-.3-3.5 1.3a12.3 12.3 0 0 0-6.2 0C6.5 2.8 5.4 3.1 5.4 3.1a4.2 4.2 0 0 0-.1 3.2A4.6 4.6 0 0 0 4 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21" />,
+  target: <><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="1.5" /></>,
+  lock: <><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></>
 }
 function Icon({ name, size = 18 }) {
   return <svg className="icon" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{ICONS[name]}</svg>
@@ -137,7 +140,6 @@ function ScoreRing({ value }) {
         initial={{ strokeDashoffset: circumference }} animate={{ strokeDashoffset: circumference * (1 - value / 100) }}
         transition={{ duration: 1.3, ease }} />
     </svg>
-    <div className="ringGlow" />
     <div className="ringLabel"><strong><CountUp value={value} /><small>%</small></strong><span>role readiness</span></div>
   </div>
 }
@@ -197,6 +199,12 @@ export default function App() {
   const [boardQuery, setBoardQuery] = useState({ source: 'GREENHOUSE', board: '', q: '' })
   const [boardResults, setBoardResults] = useState(null)
   const [ai, setAi] = useState(null)
+  const [auth, setAuth] = useState({ configured: false, user: null })
+  const [authChecked, setAuthChecked] = useState(false)
+  const [guest, setGuest] = useState(() => { try { return sessionStorage.getItem('pp_guest') === '1' } catch { return false } })
+  const continueAsGuest = () => { try { sessionStorage.setItem('pp_guest', '1') } catch { /* private mode */ } setGuest(true) }
+  const [myRepos, setMyRepos] = useState([])
+  const [ready, setReady] = useState({ source: 'GREENHOUSE', boards: '', q: '', results: null })
   const [filter, setFilter] = useState('ALL')
   const [justUpdated, setJustUpdated] = useState(false)
   const [pending, setPending] = useState(null)
@@ -206,6 +214,18 @@ export default function App() {
   const fail = error => say(error.message, 'error')
 
   useEffect(() => { request('/ai/status').then(setAi).catch(() => setAi(null)) }, [])
+
+  // GitHub sign-in: status, the result of the OAuth redirect, and the user's repositories.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.has('signedIn')) say('Signed in with GitHub. Pick one of your repositories below.', 'success')
+    if (params.has('authError')) say(params.get('authError'), 'error')
+    if (params.has('signedIn') || params.has('authError')) window.history.replaceState({}, '', window.location.pathname)
+    request('/auth/status').then(status => {
+      setAuth(status)
+      if (status.user) request('/me/repos').then(setMyRepos).catch(error => say(`Could not list your repositories: ${error.message}`, 'warn'))
+    }).catch(() => {}).finally(() => setAuthChecked(true))
+  }, [])
 
   useEffect(() => {
     request('/jobs').then(items => {
@@ -277,6 +297,34 @@ export default function App() {
       setBoardResults(found)
       say(found.total ? `${found.total} open posting${found.total > 1 ? 's' : ''} at ${found.company}${found.total > found.jobs.length ? `; showing the first ${found.jobs.length}` : ''}. Pick one to import.` : `No postings at ${found.company} match "${boardQuery.q}".`, found.total ? 'success' : 'warn')
     } catch (error) { setBoardResults(null); fail(error) } finally { setBusy('') }
+  }
+  async function signOut() {
+    try { await request('/auth/logout', { method: 'POST' }) } catch { /* already signed out */ }
+    setAuth(current => ({ ...current, user: null })); setMyRepos([]); setSavedJobs([]); setJob(null); setAssessment(null); setHistory([])
+    say('Signed out. Your jobs stay saved to your GitHub account.')
+    request('/jobs').then(setSavedJobs).catch(() => {})
+  }
+  async function findReadyJobs(event) {
+    event.preventDefault()
+    if (!assessment) return say('Assess your repository first, then find jobs you are ready for.', 'warn')
+    setBusy('Ranking open postings against your repository…')
+    try {
+      const params = new URLSearchParams({ repository: assessment.portfolio.repository, source: ready.source, boards: ready.boards, q: ready.q.trim() })
+      const results = await request(`/jobs/ready?${params}`)
+      setReady(current => ({ ...current, results }))
+      say(results.jobs.length ? `Ranked ${results.scanned} open postings. ${results.jobs.filter(job => job.score >= 75 && job.required.length >= 3).length} are a strong match.` : 'No postings with code-checkable requirements were found on those boards.', results.jobs.length ? 'success' : 'warn')
+    } catch (error) { fail(error) } finally { setBusy('') }
+  }
+  async function importAndAssess(listing) {
+    setBusy(`Importing "${listing.title}" and assessing your repository…`)
+    try {
+      const found = await request('/jobs/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ source: listing.source, board: listing.board, jobId: listing.id }) })
+      chooseJob(found); setSavedJobs(items => [found, ...items])
+      const result = await request('/assessments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jobId: found.id, repository: assessment.portfolio.repository, branch }) })
+      setAssessment(result); setHistory(await request(historyPath(found.id, result.portfolio.repository)))
+      say(`Assessed against ${found.title} at ${found.company}. Readiness ${readiness(result.gaps)}%.`, 'success')
+      window.setTimeout(() => document.getElementById('results')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 450)
+    } catch (error) { fail(error) } finally { setBusy('') }
   }
   async function importPosting(listing) {
     setBusy(`Reading "${listing.title}" from ${listing.company}…`)
@@ -366,13 +414,29 @@ export default function App() {
   const assessing = busy.startsWith('Scanning')
   const headline = ['Show', 'what', 'your', 'code']
 
+  if (!authChecked) return <div className="loginScreen" aria-busy="true" />
+  if (!auth.user && !guest) return <div className="loginScreen">
+    <div className="loginCard">
+      <span className="logo"><Icon name="logo" size={24} /></span>
+      <h1>ProofPath</h1>
+      <p className="loginLead">Show what your code actually proves. Sign in to pick from your repositories, include private ones, and keep your jobs and history on every device.</p>
+      {auth.configured
+        ? <a className="githubButton big" href={`${API}/auth/github/login`}><Icon name="github" size={18} />Sign in with GitHub</a>
+        : <p className="muted small">GitHub sign-in is not set up on this server yet. Add GITHUB_OAUTH_CLIENT_ID and GITHUB_OAUTH_CLIENT_SECRET to enable it.</p>}
+      <button type="button" className="ghost" onClick={continueAsGuest}>Continue without signing in</button>
+      <p className="muted small">Sign-in asks only to read your public profile. Private repositories are optional and need your separate approval.</p>
+    </div>
+  </div>
+
   return <LazyMotion features={loadFeatures} strict><MotionConfig reducedMotion="user">
-  <div className="aurora" aria-hidden="true"><span /><span /><span /></div>
   <div className="app">
     <m.nav className="topbar" initial={{ y: -24, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: 0.5, ease }}>
       <div className="brand"><m.span className="logo" whileHover={{ rotate: -8, scale: 1.08 }} transition={spring}><Icon name="logo" size={20} /></m.span><span>ProofPath</span><span className="tag">Kurukshetra Hackathon</span></div>
       <div className="pills">
         <AnimatePresence>{watching && <m.span key="live" className="pill live" initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.8 }} transition={spring}><i className="dot" />Watching {repository}</m.span>}</AnimatePresence>
+        {auth.user
+          ? <span className="account">{auth.user.avatarUrl && <img src={auth.user.avatarUrl} alt="" width="26" height="26" />}<span>{auth.user.login}</span><button type="button" className="ghost" onClick={signOut}>Sign out</button></span>
+          : auth.configured && <a className="githubButton" href={`${API}/auth/github/login`}><Icon name="github" size={16} />Sign in with GitHub</a>}
       </div>
     </m.nav>
 
@@ -437,7 +501,13 @@ export default function App() {
 
       <m.article id="repo-card" className="card glow" variants={cardIn} onPointerMove={spotlight}>
         <div className="cardHead"><span className="stepNo">2</span><div><h2>Your repository</h2><p>Any public GitHub repository, scanned at an exact commit.</p></div><Icon name="repo" size={22} /></div>
-        <label>Repository<div className="inputGroup"><span>github.com/</span><input value={repository} onChange={event => { setRepository(event.target.value); setRepoDetails(null); setWatching(false) }} placeholder="owner/repository" /></div></label>
+        {auth.user && myRepos.length > 0 && <label>Your repositories<select value={myRepos.some(repo => repo.fullName.toLowerCase() === repository.trim().toLowerCase()) ? myRepos.find(repo => repo.fullName.toLowerCase() === repository.trim().toLowerCase()).fullName : ''} onChange={event => { const picked = myRepos.find(repo => repo.fullName === event.target.value); if (!picked) return; setRepository(picked.fullName); setBranch(''); setWatching(false); setRepoDetails({ fullName: picked.fullName, defaultBranch: picked.defaultBranch, htmlUrl: `https://github.com/${picked.fullName}`, privateRepository: picked.privateRepository }) }}>
+          <option value="">Choose one of your {myRepos.length} repositories</option>
+          {myRepos.map(repo => <option key={repo.fullName} value={repo.fullName}>{repo.fullName}{repo.privateRepository ? ' (private)' : ''}{repo.language ? ` · ${repo.language}` : ''}</option>)}
+        </select></label>}
+        {auth.user && !auth.user.privateAccess && <p className="muted small hintLine">Showing public repositories. <a href={`${API}/auth/github/login?privateRepos=true`}>Include private repositories</a></p>}
+        {!auth.user && auth.configured && <p className="muted small hintLine"><a href={`${API}/auth/github/login`}>Sign in with GitHub</a> to pick from your repositories, include private ones, and keep your jobs on every device.</p>}
+        <label>{auth.user ? 'Or type any public repository' : 'Repository'}<div className="inputGroup"><span>github.com/</span><input value={repository} onChange={event => { setRepository(event.target.value); setRepoDetails(null); setWatching(false) }} placeholder="owner/repository" /></div></label>
         <label>Branch<input value={branch} onChange={event => { setBranch(event.target.value); setWatching(false) }} placeholder="Default branch" /></label>
         <div className="buttons"><button className="secondary" type="button" disabled={!!busy} onClick={resolveRepository}>Check repository</button></div>
         <AnimatePresence>{repoDetails && <m.div key={repoDetails.fullName} className="found" initial={{ opacity: 0, height: 0, marginTop: 0 }} animate={{ opacity: 1, height: 'auto', marginTop: 14 }} exit={{ opacity: 0, height: 0, marginTop: 0 }}><Icon name="check" size={16} /><span>Found <a href={repoDetails.htmlUrl} target="_blank" rel="noreferrer">{repoDetails.fullName}</a> · default branch <code>{repoDetails.defaultBranch}</code></span></m.div>}</AnimatePresence>
@@ -456,7 +526,6 @@ export default function App() {
           {reassessing
             ? <><i className="spinner" /><div><strong>Commit {shortSha(pending)} detected. Reassessing…</strong><span>The AI is reviewing the changed code. The results below update when it finishes.</span></div></>
             : <>
-              <Confetti key={assessment.portfolio.revision} />
               <m.span key={`icon-${assessment.portfolio.revision}`} className="bannerIcon" initial={{ scale: 0.4 }} animate={{ scale: 1, rotate: [0, -12, 12, -6, 0] }} transition={{ duration: 0.8 }}><Icon name="bolt" size={20} /></m.span>
               <div><strong>Reassessed automatically after commit {shortSha(assessment.portfolio.revision)}</strong><span>{change ? `${change.files.length} file${change.files.length === 1 ? '' : 's'} changed; ${change.reassessedSkills.length ? `re-checked ${change.reassessedSkills.map(pretty).join(', ')}` : 'no skill evidence was touched'}. ` : ''}{improved.length ? `${improved.map(gap => pretty(gap.skill)).join(', ')} improved and now cite${improved.length === 1 ? 's' : ''} the changed files.` : 'No requirement changed status in this commit.'}</span></div>
             </>}
@@ -512,6 +581,30 @@ export default function App() {
           <AnimatePresence mode="popLayout">{visible.map(gap => <SkillCard key={gap.skill} gap={gap} change={changes[gap.skill]} recheck={recheckOf(gap.skill)} changedPaths={changedPaths} />)}</AnimatePresence>
         </m.div>
         {visible.length === 0 && <p className="muted empty">Nothing in this view.</p>}
+
+        <m.div className="readyJobs card" variants={cardIn} id="ready-jobs">
+          <div className="changeHead"><span className="summaryIcon"><Icon name="target" size={18} /></span><div><h3>Jobs you're ready for</h3>
+            <p className="muted small">Ranks open postings on company job boards by how many of their requirements {assessment.portfolio.repository} already proves.</p></div></div>
+          <form onSubmit={findReadyJobs} className="readyForm">
+            <label>Job board<select value={ready.source} onChange={event => setReady({ ...ready, source: event.target.value, results: null })}>{BOARDS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+            <label>Companies<input required value={ready.boards} onChange={event => setReady({ ...ready, boards: event.target.value })} placeholder={`e.g. ${(BOARDS.find(item => item[0] === ready.source) || BOARDS[0])[2]}, airbnb`} /></label>
+            <label>Keyword<input value={ready.q} onChange={event => setReady({ ...ready, q: event.target.value })} placeholder="intern, backend…" /></label>
+            <button className="primary" disabled={!!busy}>Find matches</button>
+          </form>
+          {ready.results?.warnings?.map(warning => <p key={warning} className="muted small warnLine">{warning}</p>)}
+          {ready.results?.jobs?.length > 0 && <m.ol className="readyList" variants={stagger(0.04)} initial="hidden" animate="show">{ready.results.jobs.map(item =>
+            <m.li key={`${item.listing.board}-${item.listing.id}`} variants={fadeUp}>
+              <div className={`readyScore ${item.score >= 75 ? 'high' : item.score >= 50 ? 'mid' : 'low'}`}><strong>{item.score}%</strong><span>{item.met.length}/{item.required.length}</span></div>
+              <div className="readyBody">
+                <strong>{item.listing.title}</strong>
+                <span className="muted small">{item.listing.company}{item.listing.location ? ` · ${item.listing.location}` : ''}</span>
+                <p className="readyLine">{item.missing.length === 0 && item.partial.length === 0 ? `You meet all ${item.required.length} code-checkable requirements${item.required.length < 3 ? ' (few are listed, so the score is cautious)' : ''}.` : `You meet ${item.met.length} of ${item.required.length}${item.missing.length ? `. Missing: ${item.missing.map(pretty).join(', ')}` : ''}${item.partial.length ? `. Partly shown: ${item.partial.map(pretty).join(', ')}` : ''}.`}</p>
+                <div className="skillChips">{item.met.map(skill => <span key={skill} className="chip chip-met">{pretty(skill)}</span>)}{item.partial.map(skill => <span key={skill} className="chip chip-partial">{pretty(skill)}</span>)}{item.missing.map(skill => <span key={skill} className="chip chip-missing">{pretty(skill)}</span>)}</div>
+              </div>
+              <div className="readyActions"><a href={item.listing.url} target="_blank" rel="noreferrer" className="ghost">Posting <Icon name="link" size={13} /></a><button type="button" className="secondary" disabled={!!busy} onClick={() => importAndAssess(item.listing)}>Assess me</button></div>
+            </m.li>)}</m.ol>}
+          {ready.results && <p className="muted small">Quick match from keyword rules across {ready.results.scanned} postings. “Assess me” imports the posting and runs the full AI review with cited evidence.</p>}
+        </m.div>
 
         {history.length > 1 && <m.div className="timeline card" variants={cardIn}>
           <h3>Scan history</h3><p className="muted small">Each push creates a new scan. Select one to compare.</p>

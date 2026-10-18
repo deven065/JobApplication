@@ -24,15 +24,34 @@ public class GitHubPortfolioService {
         this.publicWebhookBaseUrl = publicWebhookBaseUrl == null ? "" : publicWebhookBaseUrl.trim().replaceAll("/+$", "");
         RestClient.Builder builder = RestClient.builder().baseUrl("https://api.github.com")
                 .defaultHeader("Accept", "application/vnd.github+json").defaultHeader("User-Agent", "AI-Career-Coach-Demo");
-        if (!this.token.isBlank()) builder.defaultHeader("Authorization", "Bearer " + this.token);
         github = builder.build();
+    }
+    /** The signed-in user's token when there is one, otherwise the server's GITHUB_TOKEN (if configured). */
+    private void auth(org.springframework.http.HttpHeaders headers) {
+        String user = GitHubCredentials.token();
+        String chosen = user != null && !user.isBlank() ? user : token;
+        if (!chosen.isBlank()) headers.setBearerAuth(chosen);
     }
 
     public GitHubRepository repository(String repository) {
         String[] id = repositoryId(repository);
-        JsonNode node = json(github.get().uri("/repos/{owner}/{name}", id[0], id[1]).retrieve().body(String.class));
+        JsonNode node = json(github.get().uri("/repos/{owner}/{name}", id[0], id[1]).headers(this::auth).retrieve().body(String.class));
         if (node == null || node.path("default_branch").asText().isBlank()) throw new IllegalArgumentException("GitHub repository was not found or is not accessible: " + repository);
         return new GitHubRepository(node.path("full_name").asText(), node.path("default_branch").asText(), node.path("html_url").asText(), node.path("private").asBoolean());
+    }
+
+    /** Repositories of the signed-in user, most recently pushed first (requires a user token). */
+    public List<RepoSummary> userRepositories() {
+        if (GitHubCredentials.token() == null) throw new IllegalStateException("Sign in with GitHub to list your repositories.");
+        JsonNode list = json(github.get().uri("/user/repos?per_page=100&sort=pushed&affiliation=owner,collaborator,organization_member")
+                .headers(this::auth).retrieve().body(String.class));
+        List<RepoSummary> repos = new ArrayList<>();
+        for (JsonNode repo : list) {
+            String pushed = repo.path("pushed_at").asText("");
+            repos.add(new RepoSummary(repo.path("full_name").asText(), repo.path("private").asBoolean(), repo.path("default_branch").asText("main"),
+                    repo.path("language").asText(null), repo.path("description").asText(null), pushed.isBlank() ? null : Instant.parse(pushed)));
+        }
+        return repos;
     }
 
     public PortfolioScan scan(String repository, String branch) {
@@ -42,7 +61,7 @@ public class GitHubPortfolioService {
         String sha = Objects.requireNonNull(commit).path("sha").asText();
         String treeSha = commit.path("commit").path("tree").path("sha").asText();
         if (sha.isBlank() || treeSha.isBlank()) throw new IllegalStateException("GitHub did not return a complete commit tree.");
-        JsonNode tree = json(github.get().uri("/repos/{owner}/{name}/git/trees/{sha}?recursive=1", id[0], id[1], treeSha).retrieve().body(String.class));
+        JsonNode tree = json(github.get().uri("/repos/{owner}/{name}/git/trees/{sha}?recursive=1", id[0], id[1], treeSha).headers(this::auth).retrieve().body(String.class));
         Map<Skill, List<Evidence>> found = new EnumMap<>(Skill.class);
         int attempted = 0;
         int scanned = 0;
@@ -55,7 +74,7 @@ public class GitHubPortfolioService {
             attempted++;
             try {
                 String raw = json(github.get().uri("/repos/{owner}/{name}/git/blobs/{blob}", id[0], id[1], node.path("sha").asText())
-                        .retrieve().body(String.class)).path("content").asText();
+                        .headers(this::auth).retrieve().body(String.class)).path("content").asText();
                 String content = new String(Base64.getMimeDecoder().decode(raw), StandardCharsets.UTF_8);
                 scanned++;
                 for (Skill skill : SkillMatcher.skillsIn(content)) {
@@ -77,7 +96,7 @@ public class GitHubPortfolioService {
     /** GitHub answers 422 for a branch that does not exist; turn that into an actionable message. */
     private JsonNode commit(String repository, String[] id, String ref) {
         try {
-            return json(github.get().uri("/repos/{owner}/{name}/commits/{ref}", id[0], id[1], ref).retrieve().body(String.class));
+            return json(github.get().uri("/repos/{owner}/{name}/commits/{ref}", id[0], id[1], ref).headers(this::auth).retrieve().body(String.class));
         } catch (HttpClientErrorException error) {
             if (error.getStatusCode().value() != 422) throw error;
             String defaultBranch = "";
@@ -93,7 +112,7 @@ public class GitHubPortfolioService {
     public ChangeSet compare(String repository, String baseRevision, String headRevision) {
         String[] id = repositoryId(repository);
         JsonNode node = json(github.get().uri("/repos/{owner}/{name}/compare/{range}", id[0], id[1], baseRevision + "..." + headRevision)
-                .retrieve().body(String.class));
+                .headers(this::auth).retrieve().body(String.class));
         List<ChangedFile> files = new ArrayList<>();
         for (JsonNode file : node.path("files")) {
             String path = file.path("filename").asText();
@@ -111,7 +130,7 @@ public class GitHubPortfolioService {
         Map<String, Object> config = Map.of("url", publicWebhookBaseUrl + "/api/webhooks/github", "content_type", "json", "secret", secret, "insecure_ssl", "0");
         Map<String, Object> body = Map.of("name", "web", "active", true, "events", List.of("push"), "config", config);
         String[] id = repositoryId(repository);
-        github.post().uri("/repos/{owner}/{name}/hooks", id[0], id[1]).body(body).retrieve().toBodilessEntity();
+        github.post().uri("/repos/{owner}/{name}/hooks", id[0], id[1]).body(body).headers(this::auth).retrieve().toBodilessEntity();
     }
     private String[] repositoryId(String repository) {
         String value = repository == null ? "" : repository.trim();

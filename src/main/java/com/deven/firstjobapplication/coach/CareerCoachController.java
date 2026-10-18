@@ -19,6 +19,10 @@ public class CareerCoachController {
     private final AiCoach coach;
     private final JobBoardService boards;
     private final Map<String, JobRequirement> savedJobs;
+    private final Map<String, String> jobOwners = new java.util.concurrent.ConcurrentHashMap<>();
+    private AuthStore authStore;  // absent in unit tests; then every job is public
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void useAuthStore(AuthStore authStore) { this.authStore = authStore; jobOwners.putAll(authStore.jobOwners()); }
     public CareerCoachController(JobDiscoveryService jobs, AssessmentService assessments, GitHubPortfolioService github, StateStore store) {
         this(jobs, assessments, github, store, AiCoach.disabled());
     }
@@ -38,9 +42,21 @@ public class CareerCoachController {
                 : new AiStatus(false, "none", "", "AI review is off. Set GROQ_API_KEY or GEMINI_API_KEY (both free) and restart the backend. Keyword rules are used meanwhile.");
     }
     @GetMapping("/jobs/demo") public JobRequirement demoJob() { return savedJobs.get("demo-backend"); }
+    /** Signed-in users see their own jobs on any device; signed-out visitors see jobs nobody owns. */
     @GetMapping("/jobs") public List<JobRequirement> savedJobs() {
+        String login = GitHubCredentials.login();
         return savedJobs.values().stream().filter(job -> !job.id().equals("demo-backend"))
+                .filter(job -> Objects.equals(jobOwners.get(job.id()), login))
                 .sorted(Comparator.comparing(JobRequirement::fetchedAt).reversed()).toList();
+    }
+    private ReadyJobsService readyJobs;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void useReadyJobs(ReadyJobsService readyJobs) { this.readyJobs = readyJobs; }
+    /** Open postings on the given boards, ranked by how much of each one this repository already proves. */
+    @GetMapping("/jobs/ready") public ReadyJobResults readyJobs(@RequestParam String repository, @RequestParam String source,
+                                                                @RequestParam String boards, @RequestParam(required = false) String q) {
+        if (readyJobs == null) throw new IllegalStateException("Job matching is not available.");
+        return readyJobs.rank(repository, source, Arrays.asList(boards.split("[,\\s]+")), q);
     }
     /** Lists real postings from a company's public Greenhouse, Lever or Ashby board. */
     @GetMapping("/jobs/boards") public JobBoardResults searchBoard(@RequestParam String source, @RequestParam String board, @RequestParam(required = false) String q) {
@@ -51,7 +67,7 @@ public class CareerCoachController {
         JobBoardService.JobPosting posting = boards.fetch(body.source(), body.board(), body.jobId());
         if (posting.url().isBlank()) throw new IllegalStateException("The job board did not return a public link for this posting.");
         JobRequirement job = jobs.discover(posting.title(), posting.company(), posting.url(), posting.text());
-        store.saveJob(job); savedJobs.put(job.id(), job); return job;
+        return remember(job);
     }
     @PostMapping("/jobs/discover") public JobRequirement discover(@RequestBody DiscoverJob body) {
         String text = body.postingText();
@@ -60,10 +76,23 @@ public class CareerCoachController {
             var link = JobBoardService.recognise(body.sourceUrl());
             if (link.isPresent()) text = boards.fetch(link.get().source(), link.get().board(), link.get().jobId()).text();
         }
-        JobRequirement job = jobs.discover(body.title(), body.company(), body.sourceUrl(), text); store.saveJob(job); savedJobs.put(job.id(), job); return job;
+        return remember(jobs.discover(body.title(), body.company(), body.sourceUrl(), text));
+    }
+    private JobRequirement remember(JobRequirement job) {
+        store.saveJob(job); savedJobs.put(job.id(), job);
+        String login = GitHubCredentials.login();
+        if (login != null && authStore != null) { authStore.ownJob(job.id(), login); jobOwners.put(job.id(), login); }
+        return job;
+    }
+    /** A job someone signed in to create is only visible to them. */
+    private JobRequirement accessible(String jobId) {
+        JobRequirement job = Optional.ofNullable(savedJobs.get(jobId)).orElseThrow(() -> new NoSuchElementException("Unknown job id"));
+        String owner = jobOwners.get(jobId);
+        if (owner != null && !owner.equals(GitHubCredentials.login())) throw new SecurityException("This job belongs to another account. Sign in as its owner.");
+        return job;
     }
     @PutMapping("/jobs/{id}/requirements") public JobRequirement updateRequirements(@PathVariable String id, @RequestBody RequirementsUpdate body) {
-        JobRequirement existing = Optional.ofNullable(savedJobs.get(id)).orElseThrow(() -> new NoSuchElementException("Unknown job id"));
+        JobRequirement existing = accessible(id);
         if (body.skills() == null || body.skills().isEmpty()) throw new IllegalArgumentException("Select at least one requirement.");
         List<Skill> skills = body.skills().stream().distinct().toList();
         List<RequirementQuote> quotes = Optional.ofNullable(existing.requirementQuotes()).orElse(List.of()).stream()
@@ -76,8 +105,7 @@ public class CareerCoachController {
         return updated;
     }
     @PostMapping("/assessments") public Assessment assess(@RequestBody AssessRequest body) {
-        JobRequirement job = Optional.ofNullable(savedJobs.get(body.jobId())).orElseThrow(() -> new NoSuchElementException("Unknown job id"));
-        return assessments.assess(job, body.repository(), body.branch());
+        return assessments.assess(accessible(body.jobId()), body.repository(), body.branch());
     }
     @GetMapping("/repositories/resolve") public GitHubRepository resolveRepository(@RequestParam String repository) { return github.repository(repository); }
     @GetMapping("/repositories/watch") public WatchStatus watchStatus(@RequestParam String repository) {
@@ -106,6 +134,8 @@ public class CareerCoachController {
             github.createPushWebhook(repo.fullName(), secret);
         }
         assessments.watch(new RepoRegistration(repo.fullName(), branch, secret));
+        // Background checks of this repository use the watcher's GitHub access (private repos, higher rate limit).
+        if (GitHubCredentials.login() != null && authStore != null) authStore.ownWatch(repo.fullName(), GitHubCredentials.login());
         String message = body.installGitHubWebhook() || alreadyInstalled
                 ? "Watching changes with a GitHub webhook and one-minute polling."
                 : "Watching changes. GitHub will be checked every minute.";
@@ -115,9 +145,11 @@ public class CareerCoachController {
         return assessments.lastScan(owner + "/" + repo).orElseThrow(() -> new NoSuchElementException("Repository has not been scanned"));
     }
     @GetMapping("/assessments/latest") public Assessment latestAssessment(@RequestParam String jobId, @RequestParam String repository) {
+        accessible(jobId);
         return assessments.latestAssessment(jobId, repository).orElseThrow(() -> new NoSuchElementException("No tracked assessment found. Assess and watch this repository first."));
     }
     @GetMapping("/assessments/history") public List<Assessment> history(@RequestParam String jobId, @RequestParam String repository) {
+        if (savedJobs.containsKey(jobId)) accessible(jobId);
         return assessments.history(jobId, repository);
     }
     @PostMapping("/webhooks/github") @ResponseStatus(HttpStatus.ACCEPTED)
@@ -131,7 +163,11 @@ public class CareerCoachController {
         if (watch.webhookSecret() == null || watch.webhookSecret().isBlank() || !validSignature(body, signature, watch.webhookSecret()))
             throw new SecurityException("Invalid GitHub webhook signature");
         String pushedBranch = payload.path("ref").asText();
-        if (pushedBranch.equals("refs/heads/" + watch.branch())) assessments.reassessRepository(repo, payload.path("after").asText(null));
+        if (!pushedBranch.equals("refs/heads/" + watch.branch())) return;
+        String after = payload.path("after").asText(null);
+        var owner = authStore == null ? Optional.<AuthStore.Session>empty() : authStore.watchOwner(repo);
+        if (owner.isPresent()) GitHubCredentials.as(owner.get().user().login(), owner.get().token(), () -> assessments.reassessRepository(repo, after));
+        else assessments.reassessRepository(repo, after);
     }
     private String blankToDefault(String branch, String defaultBranch) { return branch == null || branch.isBlank() ? defaultBranch : branch.trim(); }
     private boolean validSignature(byte[] body, String supplied, String secret) throws Exception {
