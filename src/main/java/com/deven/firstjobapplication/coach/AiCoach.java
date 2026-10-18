@@ -193,6 +193,36 @@ public class AiCoach {
         return scan.evidence().getOrDefault(skill, List.of()).stream().limit(limit).toList();
     }
 
+    // ---- Interview questions about the student's own code ----------------------------------------
+
+    public record InterviewItem(
+            @JsonPropertyDescription("Path of the file the question is about, copied exactly from the input") String path,
+            @JsonPropertyDescription("One specific interview question that names something visible in that file's code") String question,
+            @JsonPropertyDescription("One sentence on what a strong answer covers") String lookFor) { }
+    public record InterviewSet(List<InterviewItem> questions) { }
+
+    private static final String INTERVIEW_SYSTEM = """
+            You prepare a student for technical interviews using their own GitHub code. For each file below write exactly ONE
+            question an interviewer would ask about that code. The question must refer to something actually visible in the excerpt
+            (a class, method, config key, query or component name) and ask why it was done that way, what the trade-off is, or what would break.
+            Never invent code that is not in the excerpt, and do not ask generic textbook questions.
+            "lookFor" is one sentence describing what a strong answer covers.
+            Reply with JSON only, in this shape:
+            {"questions":[{"path":"src/Main.java","question":"...","lookFor":"..."}]}""";
+
+    public List<InterviewItem> interviewQuestions(String repository, List<Evidence> files) {
+        int excerptChars = provider == null ? 1800 : Math.min(provider.excerptChars(), 1200);
+        StringBuilder prompt = new StringBuilder("Repository: ").append(repository).append("\n\n");
+        for (Evidence file : files) {
+            String code = file.excerpt() == null ? file.snippet() : file.excerpt();
+            if (code.length() > excerptChars) code = code.substring(0, excerptChars);
+            prompt.append("<file path=\"").append(file.path()).append("\" skill=\"").append(file.skill().label()).append("\">\n")
+                    .append(code).append("\n</file>\n\n");
+        }
+        InterviewSet set = call(INTERVIEW_SYSTEM, prompt.toString(), InterviewSet.class);
+        return Optional.ofNullable(set.questions()).orElse(List.of());
+    }
+
     // ---- Provider calls -------------------------------------------------------------------------
 
     private <T> T call(String system, String prompt, Class<T> type) {

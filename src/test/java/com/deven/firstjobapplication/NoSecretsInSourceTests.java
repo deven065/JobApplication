@@ -13,7 +13,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /** API keys belong in .env or the hosting platform's settings, never in files that get committed or baked into images. */
 class NoSecretsInSourceTests {
-    private static final Pattern SECRET = Pattern.compile("gsk_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|ghp_[A-Za-z0-9]{20,}|sk-ant-[A-Za-z0-9_-]{20,}|AIza[0-9A-Za-z_-]{30,}");
+    private static final Pattern SECRET = Pattern.compile("gsk_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|ghp_[A-Za-z0-9]{20,}|sk-ant-[A-Za-z0-9_-]{20,}|AIza[0-9A-Za-z_-]{30,}|postgres(?:ql)?://(?!user:)[^\\s:/@]+:[^\\s@]+@");
 
     @Test void sourceAndConfigContainNoApiKeys() throws IOException {
         List<String> offenders;

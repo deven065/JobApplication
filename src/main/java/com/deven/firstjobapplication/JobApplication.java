@@ -14,7 +14,10 @@ public class JobApplication {
         // PostgreSQL rejects legacy zone names such as "Asia/Calcutta" that Windows JVMs report.
         // All timestamps are Instants, and the browser formats them in the viewer's local time.
         TimeZone.setDefault(TimeZone.getTimeZone("UTC"));
-        DatabaseUrl.toSpringProperties(System.getenv("DATABASE_URL")).forEach(System::setProperty);
+        // A platform-style URL (postgresql://user:pass@host/db) works from a real environment variable or from the local .env file.
+        String databaseUrl = System.getenv("DATABASE_URL");
+        DatabaseUrl.toSpringProperties(databaseUrl != null && !databaseUrl.isBlank() ? databaseUrl : DatabaseUrl.fromDotEnv(java.nio.file.Path.of(".env")))
+                .forEach(System::setProperty);
         SpringApplication.run(JobApplication.class, args);
     }
 

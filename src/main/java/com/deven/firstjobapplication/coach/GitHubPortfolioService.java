@@ -54,6 +54,22 @@ public class GitHubPortfolioService {
         return repos;
     }
 
+    public record CreatedIssue(int number, String url) { }
+
+    /** Opens an issue as the signed-in user (never with the server token: it must be the student's own action). */
+    public CreatedIssue createIssue(String repository, String title, String body) {
+        if (GitHubCredentials.token() == null) throw new SecurityException("Sign in with GitHub to let ProofPath open an issue in your repository.");
+        String[] id = repositoryId(repository);
+        JsonNode node = json(github.post().uri("/repos/{owner}/{name}/issues", id[0], id[1]).headers(this::auth)
+                .body(Map.of("title", title, "body", body)).retrieve().body(String.class));
+        return new CreatedIssue(node.path("number").asInt(), node.path("html_url").asText());
+    }
+    public boolean issueIsOpen(String repository, int number) {
+        String[] id = repositoryId(repository);
+        JsonNode node = json(github.get().uri("/repos/{owner}/{name}/issues/{number}", id[0], id[1], number).headers(this::auth).retrieve().body(String.class));
+        return "open".equals(node.path("state").asText());
+    }
+
     public PortfolioScan scan(String repository, String branch) {
         String ref = branch == null || branch.isBlank() ? repository(repository).defaultBranch() : branch.trim();
         String[] id = repositoryId(repository);

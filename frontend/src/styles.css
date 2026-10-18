@@ -361,3 +361,49 @@ a.metaItem:hover { color: var(--link); }
 .loginCard .logo { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 12px; background: var(--primary, #0F6E56); color: #fff; }
 .loginLead { margin: 0; color: var(--muted, #52606D); line-height: 1.55; }
 .githubButton.big { padding: 12px 22px; font-size: 1rem; width: 100%; justify-content: center; box-sizing: border-box; }
+
+/* Fix-gap, learning paths and growth panel */
+.linkButton { display: inline-flex; align-items: center; gap: 8px; text-decoration: none; padding: 10px 16px; border-radius: var(--radius-sm); font-weight: 600; font-size: .9rem; border: 1px solid var(--border-strong); }
+.linkButton.primary { border-color: transparent; }
+.fixRow { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-top: 14px; }
+.fixRow a.small { font-size: .82rem; font-weight: 600; color: var(--link); }
+.learnPlan { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 12px; }
+.learnPlan summary { display: flex; justify-content: space-between; gap: 12px; cursor: pointer; font-weight: 700; color: var(--ink); font-size: .9rem; }
+.learnMeta { font-weight: 500; color: var(--muted); font-size: .82rem; }
+.progressTrack { height: 6px; border-radius: 999px; background: var(--surface-2); margin: 10px 0; overflow: hidden; }
+.progressTrack i { display: block; height: 100%; background: var(--primary); transition: width .25s ease; }
+.resourceList, .checklist, .bulletList, .questionList, .publicSkill ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.resourceList li { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: .9rem; }
+.resourceList a, .questionList a, .bulletList a, .profileLink a, .publicSkill a { color: var(--link); font-weight: 600; }
+.projectIdea { margin: 12px 0; font-size: .9rem; line-height: 1.5; }
+.projectIdea strong { display: block; color: var(--ink); font-size: .78rem; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 2px; }
+.checklist label { display: flex; align-items: flex-start; gap: 10px; font-size: .9rem; cursor: pointer; }
+.checklist input { margin-top: 3px; accent-color: var(--primary); }
+.growth { margin-top: 20px; }
+.growthHead h3 { margin: 0 0 4px; font-family: var(--serif); color: var(--ink); }
+.growthGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 18px; margin-top: 16px; }
+.growthItem { min-width: 0; overflow-wrap: anywhere; background: var(--surface-2); border-radius: var(--radius-sm); padding: 18px; display: grid; gap: 10px; align-content: start; }
+.growthItem h4 { margin: 0; color: var(--ink); font-size: 1rem; }
+.growthItem p { margin: 0; }
+.questionList li { display: grid; gap: 3px; }
+.questionList p { color: var(--ink); line-height: 1.45; font-size: .9rem; font-weight: 500; }
+.bulletList li { font-size: .9rem; line-height: 1.45; }
+.projectLine { font-weight: 700; color: var(--ink); font-size: .9rem; }
+.rowActions { display: flex; flex-wrap: wrap; gap: 8px; }
+.profileLink { word-break: break-all; font-size: .9rem; }
+
+/* Public profile page (/u/login) */
+.publicPage { min-height: 100vh; background: var(--bg); }
+.publicBar { display: flex; align-items: center; gap: 12px; max-width: 860px; margin: 0 auto; padding: 20px 20px 0; }
+.publicBar .brand { font-family: var(--serif); font-weight: 700; font-size: 1.2rem; color: var(--ink); text-decoration: none; }
+.publicMain { max-width: 860px; margin: 0 auto; padding: 24px 20px 64px; display: grid; gap: 20px; }
+.publicIntro { display: flex; gap: 18px; align-items: center; }
+.publicIntro img { border-radius: 50%; border: 1px solid var(--border); }
+.publicIntro h1, .publicMain h1 { margin: 0 0 4px; font-family: var(--serif); font-size: 2rem; color: var(--ink); }
+.publicIntro p { margin: 0; line-height: 1.5; }
+.publicSkills { display: grid; gap: 14px; }
+.publicSkill header { display: flex; align-items: center; justify-content: space-between; }
+.publicSkill h2 { margin: 0; font-size: 1.15rem; color: var(--ink); }
+.publicSkill p { margin: 8px 0 12px; line-height: 1.55; }
+.publicFoot { text-align: center; }
+.publicFoot a { color: var(--link); font-weight: 600; }

@@ -29,5 +29,20 @@ final class DatabaseUrl {
                 : Map.of("spring.datasource.url", jdbc, "spring.datasource.username", user, "spring.datasource.password", password);
     }
 
+    /** The DATABASE_URL line of a local .env file, or null when the file or the line is missing. */
+    static String fromDotEnv(java.nio.file.Path file) {
+        try {
+            for (String line : java.nio.file.Files.readAllLines(file, StandardCharsets.UTF_8)) {
+                String trimmed = line.trim();
+                if (!trimmed.startsWith("DATABASE_URL=")) continue;
+                String value = trimmed.substring("DATABASE_URL=".length()).trim();
+                if (value.length() > 1 && (value.startsWith("\"") && value.endsWith("\"") || value.startsWith("'") && value.endsWith("'")))
+                    value = value.substring(1, value.length() - 1);
+                return value.isEmpty() ? null : value;
+            }
+        } catch (java.io.IOException | RuntimeException missing) { /* no .env: use the configured default */ }
+        return null;
+    }
+
     private static String decode(String part) { return URLDecoder.decode(part, StandardCharsets.UTF_8); }
 }

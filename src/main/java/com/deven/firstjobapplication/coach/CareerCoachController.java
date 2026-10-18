@@ -58,6 +58,18 @@ public class CareerCoachController {
         if (readyJobs == null) throw new IllegalStateException("Job matching is not available.");
         return readyJobs.rank(repository, source, Arrays.asList(boards.split("[,\\s]+")), q);
     }
+    private GapActionService gapActions;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void useGapActions(GapActionService gapActions) { this.gapActions = gapActions; }
+    /** "Fix this gap": opens a GitHub issue with a checklist in the student's own repository and keeps the repository watched. */
+    @PostMapping("/gaps/issue") public IssueResult fixGap(@RequestBody FixGapRequest body) {
+        if (gapActions == null) throw new IllegalStateException("Issue creation is not available.");
+        JobRequirement job = accessible(body.jobId());
+        boolean alreadyWatched = assessments.watch(body.repository()).isPresent();
+        IssueResult result = gapActions.fixGap(job, body.repository(), body.skill(), GitHubCredentials.login());
+        if (!alreadyWatched && authStore != null) authStore.ownWatch(body.repository().trim(), GitHubCredentials.login());
+        return result;
+    }
     /** Lists real postings from a company's public Greenhouse, Lever or Ashby board. */
     @GetMapping("/jobs/boards") public JobBoardResults searchBoard(@RequestParam String source, @RequestParam String board, @RequestParam(required = false) String q) {
         return boards.search(source, board, q);
@@ -177,6 +189,7 @@ public class CareerCoachController {
     }
     public record DiscoverJob(String title, String company, String sourceUrl, String postingText) { }
     public record ImportJob(String source, String board, String jobId) { }
+    public record FixGapRequest(String jobId, String repository, Skill skill) { }
     public record AssessRequest(String jobId, String repository, String branch) { }
     public record WatchRequest(String repository, String branch, boolean installGitHubWebhook) { }
     public record RequirementsUpdate(List<Skill> skills) { }

@@ -58,12 +58,12 @@ public class AuthController {
     }
 
     /** Starts sign-in. private=true also asks for the repo scope so private repositories can be assessed. */
-    @GetMapping("/auth/github/login") public ResponseEntity<Void> login(@RequestParam(defaultValue = "false") boolean privateRepos) {
+    @GetMapping("/auth/github/login") public ResponseEntity<Void> login(@RequestParam(defaultValue = "false") boolean privateRepos, @RequestParam(defaultValue = "false") boolean issues) {
         if (!configured()) return redirect(baseUrl + "/?authError=" + enc("GitHub sign-in is not configured on this server."), null);
         String state = randomState();
         String url = UriComponentsBuilder.fromUriString("https://github.com/login/oauth/authorize")
                 .queryParam("client_id", clientId).queryParam("redirect_uri", callbackUrl())
-                .queryParam("scope", privateRepos ? "read:user repo" : "read:user")
+                .queryParam("scope", privateRepos ? "read:user repo" : issues ? "read:user public_repo" : "read:user")
                 .queryParam("state", state).queryParam("allow_signup", "true").encode().build().toUriString();
         ResponseCookie cookie = ResponseCookie.from(STATE_COOKIE, state).httpOnly(true).secure(secure()).sameSite("Lax")
                 .path("/api/auth").maxAge(Duration.ofMinutes(10)).build();
@@ -86,10 +86,11 @@ public class AuthController {
             String token = tokenReply.path("access_token").asText("");
             if (token.isBlank()) throw new IllegalStateException(tokenReply.path("error_description").asText("GitHub did not return an access token."));
             String scopes = tokenReply.path("scope").asText("");
+            List<String> granted = Arrays.asList(scopes.split("[ ,]"));
             JsonNode me = json.readTree(http.get().uri("https://api.github.com/user").header("Authorization", "Bearer " + token)
                     .header("Accept", "application/vnd.github+json").retrieve().body(String.class));
             AuthUser user = new AuthUser(me.path("login").asText(), me.path("name").asText(me.path("login").asText()),
-                    me.path("avatar_url").asText(null), Arrays.asList(scopes.split("[ ,]")).contains("repo"));
+                    me.path("avatar_url").asText(null), granted.contains("repo"), granted.contains("repo") || granted.contains("public_repo"));
             String session = auth.signIn(user, token);
             ResponseCookie sessionCookie = ResponseCookie.from(SessionFilter.COOKIE, session).httpOnly(true).secure(secure())
                     .sameSite("Lax").path("/").maxAge(Duration.ofDays(30)).build();
