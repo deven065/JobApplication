@@ -34,16 +34,17 @@ public class AuthController {
     private static final String STATE_COOKIE = "pp_oauth_state";
     private static final SecureRandom RANDOM = new SecureRandom();
     private final AuthStore auth;
+    private final AccountService accounts;
     private final GitHubPortfolioService github;
     private final String clientId, clientSecret, baseUrl;
     private final ObjectMapper json = new ObjectMapper();
     private final RestClient http = RestClient.builder().defaultHeader("User-Agent", "ProofPath").build();
 
-    public AuthController(AuthStore auth, GitHubPortfolioService github,
+    public AuthController(AuthStore auth, AccountService accounts, GitHubPortfolioService github,
                           @Value("${github.oauth.client-id:}") String clientId,
                           @Value("${github.oauth.client-secret:}") String clientSecret,
                           @Value("${app.base-url:http://localhost:5173}") String baseUrl) {
-        this.auth = auth; this.github = github;
+        this.auth = auth; this.accounts = accounts; this.github = github;
         this.clientId = clientId == null ? "" : clientId.trim();
         this.clientSecret = clientSecret == null ? "" : clientSecret.trim();
         this.baseUrl = baseUrl.trim().replaceAll("/+$", "");
@@ -100,6 +101,21 @@ public class AuthController {
             log.warn("GitHub sign-in failed", failure);
             return redirect(baseUrl + "/?authError=" + enc("GitHub sign-in failed. Please try again."), clearState);
         }
+    }
+
+    public record Credentials(String name, String email, String password) { }
+
+    /** Creates an email account and signs it in. */
+    @PostMapping("/auth/register") public ResponseEntity<AuthUser> register(@RequestBody Credentials body) {
+        return signedIn(accounts.register(body.name(), body.email(), body.password()));
+    }
+    @PostMapping("/auth/login") public ResponseEntity<AuthUser> loginWithEmail(@RequestBody Credentials body) {
+        return signedIn(accounts.login(body.email(), body.password()));
+    }
+    private ResponseEntity<AuthUser> signedIn(AccountService.Signed signed) {
+        ResponseCookie cookie = ResponseCookie.from(SessionFilter.COOKIE, signed.sessionId()).httpOnly(true).secure(secure())
+                .sameSite("Lax").path("/").maxAge(Duration.ofDays(30)).build();
+        return ResponseEntity.ok().header(HttpHeaders.SET_COOKIE, cookie.toString()).body(signed.user());
     }
 
     @PostMapping("/auth/logout") public ResponseEntity<Void> logout(HttpServletRequest request) {

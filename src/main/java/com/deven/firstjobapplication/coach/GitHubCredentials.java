@@ -15,7 +15,7 @@ public final class GitHubCredentials {
     public static String token() { return TOKEN.get(); }
     public static String login() { return LOGIN.get(); }
 
-    static void set(String login, String token) { LOGIN.set(login); TOKEN.set(token); }
+    static void set(String login, String token) { LOGIN.set(login); TOKEN.set(token == null || token.isBlank() ? null : token); }
     static void clear() { LOGIN.remove(); TOKEN.remove(); }
 
     /** Runs work as the given user, restoring whatever was set before. */

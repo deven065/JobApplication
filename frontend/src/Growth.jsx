@@ -105,7 +105,7 @@ export function GrowthPanel({ repository, auth, say, fail }) {
         </>}
         {auth.user && !profile && (ownsRepo
           ? <button type="button" className="primary" disabled={!!busy} onClick={publish}>{busy === 'profile' ? 'Publishing…' : 'Publish my verified skills'}</button>
-          : <p className="muted small">Choose a repository under {auth.user.login}/ to publish it.</p>)}
+          : <p className="muted small">{auth.user.provider === 'email' ? 'Publishing needs a GitHub sign-in, so ProofPath can confirm the repository is yours.' : `Choose a repository under ${auth.user.login}/ to publish it.`}</p>)}
       </div>
     </div>
   </section>

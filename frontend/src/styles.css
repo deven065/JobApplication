@@ -407,3 +407,13 @@ a.metaItem:hover { color: var(--link); }
 .publicSkill p { margin: 8px 0 12px; line-height: 1.55; }
 .publicFoot { text-align: center; }
 .publicFoot a { color: var(--link); font-weight: 600; }
+
+/* Email sign-in and sign-up */
+.divider { width: 100%; display: flex; align-items: center; gap: 12px; margin: 2px 0; color: var(--muted); font-size: .8rem; }
+.divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+.authTabs { width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; border-radius: var(--radius-sm); background: var(--surface-2); }
+.authTabs button { justify-content: center; color: var(--muted); background: transparent; padding: 8px 10px; }
+.authTabs button.on { color: var(--ink); background: #fff; box-shadow: 0 1px 2px rgba(16, 42, 67, .12); }
+.loginForm { width: 100%; text-align: left; display: grid; gap: 2px; }
+.loginForm .primary { margin-top: 16px; justify-content: center; }
+.formError { margin: 12px 0 0; padding: 9px 12px; border-radius: var(--radius-sm); background: var(--gap-bg); color: var(--gap); font-size: .85rem; line-height: 1.4; }
