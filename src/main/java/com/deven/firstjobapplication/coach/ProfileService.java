@@ -25,6 +25,10 @@ public class ProfileService {
         this.jdbc = jdbc; this.assessments = assessments; this.github = github;
         this.baseUrl = baseUrl.trim().replaceAll("/+$", "");
         jdbc.execute("CREATE TABLE IF NOT EXISTS coach_profiles (login VARCHAR(128) PRIMARY KEY, repository VARCHAR(255) NOT NULL, avatar_url TEXT, published_at BIGINT NOT NULL)");
+        // The public page keeps its own copy of what was verified, because session data is deleted when a session ends.
+        jdbc.execute("ALTER TABLE coach_profiles ADD COLUMN IF NOT EXISTS revision VARCHAR(64)");
+        jdbc.execute("ALTER TABLE coach_profiles ADD COLUMN IF NOT EXISTS verified_at BIGINT");
+        jdbc.execute("ALTER TABLE coach_profiles ADD COLUMN IF NOT EXISTS skills_json TEXT");
     }
 
     public PublicProfile publish(AuthUser user, String repository) {
@@ -40,27 +44,46 @@ public class ProfileService {
         if (ResumeService.demonstrated(assessments.latestForRepository(repo)).isEmpty())
             throw new IllegalStateException("No skill is demonstrated yet, so there is nothing to publish. Fix a gap first.");
         jdbc.update("DELETE FROM coach_profiles WHERE login = ?", user.login());
-        jdbc.update("INSERT INTO coach_profiles (login, repository, avatar_url, published_at) VALUES (?, ?, ?, ?)",
-                user.login(), details.fullName(), user.avatarUrl(), System.currentTimeMillis());
+        PortfolioScan scan = assessments.lastScan(repo).orElseThrow();
+        jdbc.update("INSERT INTO coach_profiles (login, repository, avatar_url, published_at, revision, verified_at, skills_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                user.login(), details.fullName(), user.avatarUrl(), System.currentTimeMillis(), scan.revision(),
+                scan.scannedAt() == null ? null : scan.scannedAt().toEpochMilli(), writeSkills(verifiedSkills(repo, user.login())));
         return find(user.login()).orElseThrow();
     }
 
     public void unpublish(String login) { jdbc.update("DELETE FROM coach_profiles WHERE login = ?", login); }
 
     public Optional<PublicProfile> find(String login) {
-        List<Map<String, Object>> rows = jdbc.queryForList("SELECT login, repository, avatar_url FROM coach_profiles WHERE LOWER(login) = LOWER(?)", login);
+        List<Map<String, Object>> rows = jdbc.queryForList("SELECT login, repository, avatar_url, revision, verified_at, skills_json FROM coach_profiles WHERE LOWER(login) = LOWER(?)", login);
         if (rows.isEmpty()) return Optional.empty();
         String owner = (String) rows.get(0).get("login"), repository = (String) rows.get(0).get("repository");
         String avatar = (String) rows.get(0).get("avatar_url");
-        Optional<PortfolioScan> scan = assessments.lastScan(repository);
-        List<ProfileSkill> skills = new ArrayList<>();
-        ResumeService.demonstrated(assessments.latestForRepository(repository)).forEach((skill, gap) -> skills.add(new ProfileSkill(skill, skill.label(), gap.explanation(),
-                gap.evidence().stream().limit(3).map(e -> new ProfileEvidence(e.path(), e.url(), e.reason())).toList())));
-        skills.sort(Comparator.comparing(ProfileSkill::skill));
+        String saved = (String) rows.get(0).get("skills_json");
+        List<ProfileSkill> skills = saved != null ? readSkills(saved) : verifiedSkills(repository, owner);  // older rows had no snapshot
+        String revision = rows.get(0).get("revision") != null ? (String) rows.get(0).get("revision") : assessments.lastScan(repository).map(PortfolioScan::revision).orElse("");
+        Object verifiedAt = rows.get(0).get("verified_at");
+        Instant verified = verifiedAt != null ? Instant.ofEpochMilli(((Number) verifiedAt).longValue()) : assessments.lastScan(repository).map(PortfolioScan::scannedAt).orElse(null);
         String profileUrl = baseUrl + "/u/" + owner;
         String badge = "[![Verified skills on ProofPath](" + baseUrl + "/api/public/" + owner + "/badge.svg)](" + profileUrl + ")";
         return Optional.of(new PublicProfile(owner, avatar, repository, "https://github.com/" + repository,
-                scan.map(PortfolioScan::revision).orElse(""), scan.map(PortfolioScan::scannedAt).orElse(null), skills, profileUrl, badge));
+                revision, verified, skills, profileUrl, badge));
+    }
+
+    /** The skills the user's own assessments of this repository have demonstrated, with their cited files. */
+    private List<ProfileSkill> verifiedSkills(String repository, String login) {
+        List<ProfileSkill> skills = new ArrayList<>();
+        ResumeService.demonstrated(assessments.latestForOwner(repository, login)).forEach((skill, gap) -> skills.add(new ProfileSkill(skill, skill.label(), gap.explanation(),
+                gap.evidence().stream().limit(3).map(e -> new ProfileEvidence(e.path(), e.url(), e.reason())).toList())));
+        skills.sort(Comparator.comparing(ProfileSkill::skill));
+        return skills;
+    }
+    private static final com.fasterxml.jackson.databind.ObjectMapper JSON = new com.fasterxml.jackson.databind.ObjectMapper();
+    private static String writeSkills(List<ProfileSkill> skills) {
+        try { return JSON.writeValueAsString(skills); } catch (Exception error) { throw new IllegalStateException("Could not save the profile", error); }
+    }
+    private static List<ProfileSkill> readSkills(String text) {
+        try { return JSON.readValue(text, new com.fasterxml.jackson.core.type.TypeReference<List<ProfileSkill>>() { }); }
+        catch (Exception error) { return List.of(); }
     }
 
     /** A small shields-style SVG for README files: "ProofPath | SQL ✓ verified". */

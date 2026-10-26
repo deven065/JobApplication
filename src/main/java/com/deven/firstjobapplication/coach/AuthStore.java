@@ -38,6 +38,7 @@ public class AuthStore {
         jdbc.execute("CREATE TABLE IF NOT EXISTS coach_sessions (id VARCHAR(80) PRIMARY KEY, login VARCHAR(100) NOT NULL, created_at VARCHAR(40) NOT NULL)");
         jdbc.execute("CREATE TABLE IF NOT EXISTS coach_job_owners (job_id VARCHAR(128) PRIMARY KEY, login VARCHAR(100) NOT NULL)");
         jdbc.execute("CREATE TABLE IF NOT EXISTS coach_watch_owners (repository VARCHAR(255) PRIMARY KEY, login VARCHAR(100) NOT NULL)");
+        jdbc.execute("CREATE TABLE IF NOT EXISTS coach_guests (id VARCHAR(80) PRIMARY KEY, last_seen BIGINT NOT NULL)");
     }
 
     public record Session(AuthUser user, String token) { }
@@ -56,6 +57,36 @@ public class AuthStore {
         return logins.isEmpty() ? Optional.empty() : user(logins.get(0));
     }
     public void signOut(String sessionId) { jdbc.update("DELETE FROM coach_sessions WHERE id = ?", sessionId); }
+    // ---- Session lifetime: guests and expiry -------------------------------------------------------
+
+    private final Map<String, Long> guestSeen = new java.util.concurrent.ConcurrentHashMap<>();
+    /** Marks a guest as active (written at most once a minute). Guests have no account; this only drives idle clean-up. */
+    public void touchGuest(String id) {
+        long now = System.currentTimeMillis();
+        Long previous = guestSeen.get(id);
+        if (previous != null && now - previous < 60_000) return;
+        guestSeen.put(id, now);
+        if (jdbc.update("UPDATE coach_guests SET last_seen = ? WHERE id = ?", now, id) == 0)
+            jdbc.update("INSERT INTO coach_guests (id, last_seen) VALUES (?, ?)", id, now);
+    }
+    public List<String> idleGuests(long cutoffMillis) { return jdbc.queryForList("SELECT id FROM coach_guests WHERE last_seen < ?", String.class, cutoffMillis); }
+    public void forgetGuest(String id) { guestSeen.remove(id); jdbc.update("DELETE FROM coach_guests WHERE id = ?", id); }
+
+    /** Deletes sessions created before the cutoff and returns the logins that now have no session left. */
+    public Set<String> expireSessions(Instant cutoff) {
+        Set<String> affected = new LinkedHashSet<>();
+        for (Map<String, Object> row : jdbc.queryForList("SELECT id, login, created_at FROM coach_sessions")) {
+            try {
+                if (Instant.parse((String) row.get("created_at")).isBefore(cutoff)) { jdbc.update("DELETE FROM coach_sessions WHERE id = ?", row.get("id")); affected.add((String) row.get("login")); }
+            } catch (RuntimeException unreadable) { jdbc.update("DELETE FROM coach_sessions WHERE id = ?", row.get("id")); affected.add((String) row.get("login")); }
+        }
+        affected.removeIf(login -> !jdbc.queryForList("SELECT id FROM coach_sessions WHERE login = ?", String.class, login).isEmpty());
+        return affected;
+    }
+    @Transactional public void disownJobs(String login) { jdbc.update("DELETE FROM coach_job_owners WHERE login = ?", login); }
+    public List<String> watchedBy(String login) { return jdbc.queryForList("SELECT repository FROM coach_watch_owners WHERE login = ?", String.class, login); }
+    @Transactional public void disownWatches(String login) { jdbc.update("DELETE FROM coach_watch_owners WHERE login = ?", login); }
+
     /** Ends every session of one account (used after a password reset). */
     public void signOutEverywhere(String login) { jdbc.update("DELETE FROM coach_sessions WHERE login = ?", login); }
 

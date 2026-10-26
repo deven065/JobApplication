@@ -24,7 +24,8 @@ class JobApplicationTests {
     }
 
     @Test void jobRequirementsAndHistoryWorkOverHttp() throws Exception {
-        HttpClient client = HttpClient.newHttpClient();
+        // The server gives each browser a private guest identity in a cookie, so the client has to keep cookies like a browser does.
+        HttpClient client = HttpClient.newBuilder().cookieHandler(new java.net.CookieManager()).build();
         String base = "http://localhost:" + port + "/api";
         HttpRequest discover = HttpRequest.newBuilder(URI.create(base + "/jobs/discover"))
                 .header("Content-Type", "application/json")

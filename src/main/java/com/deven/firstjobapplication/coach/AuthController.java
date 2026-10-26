@@ -35,16 +35,17 @@ public class AuthController {
     private static final SecureRandom RANDOM = new SecureRandom();
     private final AuthStore auth;
     private final AccountService accounts;
+    private final org.springframework.context.ApplicationEventPublisher events;
     private final GitHubPortfolioService github;
     private final String clientId, clientSecret, baseUrl;
     private final ObjectMapper json = new ObjectMapper();
     private final RestClient http = RestClient.builder().defaultHeader("User-Agent", "ProofPath").build();
 
-    public AuthController(AuthStore auth, AccountService accounts, GitHubPortfolioService github,
+    public AuthController(AuthStore auth, AccountService accounts, org.springframework.context.ApplicationEventPublisher events, GitHubPortfolioService github,
                           @Value("${github.oauth.client-id:}") String clientId,
                           @Value("${github.oauth.client-secret:}") String clientSecret,
                           @Value("${app.base-url:http://localhost:5173}") String baseUrl) {
-        this.auth = auth; this.accounts = accounts; this.github = github;
+        this.auth = auth; this.accounts = accounts; this.events = events; this.github = github;
         this.clientId = clientId == null ? "" : clientId.trim();
         this.clientSecret = clientSecret == null ? "" : clientSecret.trim();
         this.baseUrl = baseUrl.trim().replaceAll("/+$", "");
@@ -94,8 +95,9 @@ public class AuthController {
             AuthUser user = new AuthUser(me.path("login").asText(), me.path("name").asText(me.path("login").asText()),
                     me.path("avatar_url").asText(null), granted.contains("repo"), granted.contains("repo") || granted.contains("public_repo"));
             String session = auth.signIn(user, token);
+            endEarlierSessions(user.login(), request);
             ResponseCookie sessionCookie = ResponseCookie.from(SessionFilter.COOKIE, session).httpOnly(true).secure(secure())
-                    .sameSite("Lax").path("/").maxAge(Duration.ofDays(30)).build();
+                    .sameSite("Lax").path("/").maxAge(SessionSweeper.SESSION_TTL).build();
             return ResponseEntity.status(HttpStatus.FOUND).location(URI.create(baseUrl + "/?signedIn=1"))
                     .header(HttpHeaders.SET_COOKIE, sessionCookie.toString()).header(HttpHeaders.SET_COOKIE, clearState.toString()).build();
         } catch (Exception failure) {
@@ -107,15 +109,16 @@ public class AuthController {
     public record Credentials(String name, String email, String password) { }
 
     /** Creates an email account and signs it in. */
-    @PostMapping("/auth/register") public ResponseEntity<AuthUser> register(@RequestBody Credentials body) {
-        return signedIn(accounts.register(body.name(), body.email(), body.password()));
+    @PostMapping("/auth/register") public ResponseEntity<AuthUser> register(@RequestBody Credentials body, HttpServletRequest request) {
+        return signedIn(accounts.register(body.name(), body.email(), body.password()), request);
     }
-    @PostMapping("/auth/login") public ResponseEntity<AuthUser> loginWithEmail(@RequestBody Credentials body) {
-        return signedIn(accounts.login(body.email(), body.password()));
+    @PostMapping("/auth/login") public ResponseEntity<AuthUser> loginWithEmail(@RequestBody Credentials body, HttpServletRequest request) {
+        return signedIn(accounts.login(body.email(), body.password()), request);
     }
-    private ResponseEntity<AuthUser> signedIn(AccountService.Signed signed) {
+    private ResponseEntity<AuthUser> signedIn(AccountService.Signed signed, HttpServletRequest request) {
+        endEarlierSessions(signed.user().login(), request);
         ResponseCookie cookie = ResponseCookie.from(SessionFilter.COOKIE, signed.sessionId()).httpOnly(true).secure(secure())
-                .sameSite("Lax").path("/").maxAge(Duration.ofDays(30)).build();
+                .sameSite("Lax").path("/").maxAge(SessionSweeper.SESSION_TTL).build();
         return ResponseEntity.ok().header(HttpHeaders.SET_COOKIE, cookie.toString()).body(signed.user());
     }
 
@@ -129,7 +132,7 @@ public class AuthController {
         return Map.of("sent", accounts.resetAvailable(), "message", accounts.resetAvailable()
                 ? "If that email has an account, a reset link is on its way." : "Password reset by email is not set up on this server.");
     }
-    @PostMapping("/auth/reset") public ResponseEntity<AuthUser> reset(@RequestBody ResetRequest body) { return signedIn(accounts.resetPassword(body.token(), body.password())); }
+    @PostMapping("/auth/reset") public ResponseEntity<AuthUser> reset(@RequestBody ResetRequest body, HttpServletRequest request) { return signedIn(accounts.resetPassword(body.token(), body.password()), request); }
     @PostMapping("/auth/verify") public Map<String, Object> verify(@RequestBody TokenRequest body) { accounts.verifyEmail(body.token()); return Map.of("verified", true); }
     @PostMapping("/auth/resend-verification") public Map<String, Object> resend() {
         String login = GitHubCredentials.login();
@@ -139,7 +142,9 @@ public class AuthController {
 
     @PostMapping("/auth/logout") public ResponseEntity<Void> logout(HttpServletRequest request) {
         String id = SessionFilter.sessionId(request);
+        String login = GitHubCredentials.login();
         if (id != null) auth.signOut(id);
+        if (login != null) events.publishEvent(new SessionEnded(login));  // signing out deletes this session's jobs and history
         ResponseCookie gone = ResponseCookie.from(SessionFilter.COOKIE, "").httpOnly(true).secure(secure()).sameSite("Lax").path("/").maxAge(0).build();
         return ResponseEntity.noContent().header(HttpHeaders.SET_COOKIE, gone.toString()).build();
     }
@@ -147,6 +152,13 @@ public class AuthController {
     @GetMapping("/me/repos") public List<RepoSummary> repositories() {
         if (GitHubCredentials.login() == null) throw new SecurityException("Sign in with GitHub to list your repositories.");
         return github.userRepositories();
+    }
+
+    /** A new sign-in starts clean: leftovers of the account's earlier session and of this browser's guest session are deleted. */
+    private void endEarlierSessions(String login, HttpServletRequest request) {
+        events.publishEvent(new SessionEnded(login));
+        String guest = SessionFilter.guestId(request);
+        if (guest != null) events.publishEvent(new SessionEnded(SessionFilter.GUEST_PREFIX + guest));
     }
 
     private static ResponseEntity<Void> redirect(String location, ResponseCookie cookie) {

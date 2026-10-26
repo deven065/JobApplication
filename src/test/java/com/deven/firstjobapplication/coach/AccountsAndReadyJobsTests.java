@@ -43,10 +43,14 @@ class AccountsAndReadyJobsTests {
         var posting = new CareerCoachController.DiscoverJob("Intern", "Example", "https://example.com/job", "Java and SQL");
 
         JobRequirement mine = GitHubCredentials.as("deven065", "token", () -> controller.discover(posting));
-        JobRequirement anonymous = controller.discover(posting);
+        String guestId = "guestabcdefghijklmnopqrstuvwx";
+        JobRequirement anonymous = GitHubCredentials.as("guest:" + guestId, null, () -> controller.discover(posting));
 
         assertThat(GitHubCredentials.as("deven065", "token", controller::savedJobs)).extracting(JobRequirement::id).containsExactly(mine.id());
-        assertThat(controller.savedJobs()).extracting(JobRequirement::id).containsExactly(anonymous.id());
+        assertThat(GitHubCredentials.as("guest:" + guestId, null, controller::savedJobs)).extracting(JobRequirement::id).containsExactly(anonymous.id());
+        assertThat(controller.savedJobs()).isEmpty();  // a request with no identity sees nothing
+        assertThatThrownBy(() -> GitHubCredentials.as("guest:" + guestId, null, () -> controller.history(mine.id(), "o/r")))
+                .isInstanceOf(SecurityException.class);  // one visitor can never read another's job or history
         assertThatThrownBy(() -> GitHubCredentials.as("someone-else", "token", () -> controller.history(mine.id(), "o/r")))
                 .isInstanceOf(SecurityException.class);
         // Ownership is persisted, so the same account sees its jobs on another device after a restart.

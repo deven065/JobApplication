@@ -199,9 +199,45 @@ public class AssessmentService {
         }
     }
     public Optional<String> pendingRevision(String repository) { return Optional.ofNullable(pendingRevisions.get(repoKey(repository))); }
-    /** The current assessment of this repository for every job it has been assessed against. */
-    public List<Assessment> latestForRepository(String repository) {
-        return latestAssessments.values().stream().filter(a -> a.portfolio().repository().equalsIgnoreCase(repository.trim())).toList();
+    private java.util.function.Function<String, String> jobOwner;  // unset in unit tests: then nothing is filtered
+    void useJobOwners(java.util.function.Function<String, String> jobOwner) { this.jobOwner = jobOwner; }
+    private boolean ownedBy(Assessment assessment, String login) {
+        if (jobOwner == null) return true;
+        String owner = jobOwner.apply(assessment.job().id());
+        return owner != null && owner.equals(login);
+    }
+    /** The current assessment of this repository for the jobs of the signed-in user (or guest) making the request. */
+    public List<Assessment> latestForRepository(String repository) { return latestForOwner(repository, GitHubCredentials.login()); }
+    public List<Assessment> latestForOwner(String repository, String login) {
+        return latestAssessments.values().stream().filter(a -> a.portfolio().repository().equalsIgnoreCase(repository.trim()))
+                .filter(a -> ownedBy(a, login)).toList();
+    }
+    /** True when the current user has assessed this repository against at least one of their jobs. */
+    public boolean hasAssessments(String repository) { return !latestForRepository(repository).isEmpty(); }
+
+    /** Forgets a job completely: current assessments, scan history, subscriptions. */
+    public void forgetJob(String jobId) {
+        invalidateJob(jobId);
+        store.deleteHistory(jobId);
+    }
+    public Set<String> assessedRepositories(String jobId) {
+        String prefix = jobId + "|";
+        Set<String> repositories = new HashSet<>();
+        for (Map.Entry<String, AssessmentSubscription> entry : subscriptions.entrySet())
+            if (entry.getKey().startsWith(prefix)) repositories.add(entry.getValue().repository());
+        for (Map.Entry<String, Assessment> entry : latestAssessments.entrySet())
+            if (entry.getKey().startsWith(prefix)) repositories.add(entry.getValue().portfolio().repository());
+        return repositories;
+    }
+    public void unwatch(String repository) {
+        watched.remove(repoKey(repository));
+        store.deleteWatch(repository);
+    }
+    /** Drops the cached scan of a repository once no remaining job refers to it. */
+    public void forgetScanIfUnused(String repository) {
+        String key = repoKey(repository);
+        boolean used = subscriptions.values().stream().anyMatch(s -> repoKey(s.repository()).equals(key));
+        if (!used) { scans.remove(key); pendingRevisions.remove(key); }
     }
     public Optional<Assessment> latestAssessment(String jobId, String repository) { return Optional.ofNullable(latestAssessments.get(key(jobId, repository))); }
     public List<Assessment> history(String jobId, String repository) { return store.history(key(jobId, repository)); }

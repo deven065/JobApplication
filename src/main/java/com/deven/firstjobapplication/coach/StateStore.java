@@ -55,6 +55,13 @@ public class StateStore {
         return jdbc.query("SELECT payload FROM coach_history WHERE assessment_key = ? ORDER BY id DESC LIMIT 20",
                 (row, index) -> read(row.getString("payload"), Assessment.class), key);
     }
+    /** Removes a job and every scan history entry recorded for it. */
+    public void deleteJob(String jobId) {
+        jdbc.update("DELETE FROM coach_jobs WHERE id = ?", jobId);
+        jdbc.update("DELETE FROM coach_history WHERE assessment_key LIKE ?", jobId + "|%");
+    }
+    public void deleteHistory(String jobId) { jdbc.update("DELETE FROM coach_history WHERE assessment_key LIKE ?", jobId + "|%"); }
+    public void deleteWatch(String repository) { jdbc.update("DELETE FROM coach_watches WHERE repository = ?", repository); }
     public void deleteCurrentAssessments(String jobId) {
         jdbc.update("DELETE FROM coach_assessments WHERE assessment_key LIKE ?", jobId + "|%");
     }

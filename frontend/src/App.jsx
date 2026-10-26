@@ -353,7 +353,7 @@ export default function App() {
   async function signOut() {
     try { await request('/auth/logout', { method: 'POST' }) } catch { /* already signed out */ }
     setAuth(current => ({ ...current, user: null })); setMyRepos([]); setSavedJobs([]); setJob(null); setAssessment(null); setHistory([])
-    say('Signed out. Your jobs stay saved to your GitHub account.')
+    say('Signed out. The jobs and scan history from this session were deleted.')
     request('/jobs').then(setSavedJobs).catch(() => {})
   }
   async function findReadyJobs(event) {
@@ -471,7 +471,7 @@ export default function App() {
     <div className="loginCard">
       <span className="logo"><Icon name="logo" size={24} /></span>
       <h1>ProofPath</h1>
-      <p className="loginLead">Show what your code actually proves. Sign in to keep your jobs and history on every device.</p>
+      <p className="loginLead">Show what your code actually proves. Nothing is kept between sessions: your jobs and scan history are deleted when you sign out.</p>
       {auth.configured && <a className="githubButton big" href={`${API}/auth/github/login`}><Icon name="github" size={18} />Continue with GitHub</a>}
       {auth.configured && <p className="divider"><span>or use an email</span></p>}
       <div className="authTabs" role="tablist">

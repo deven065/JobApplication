@@ -26,6 +26,7 @@ public class ResumeService {
     public ResumeService(AssessmentService assessments) { this.assessments = assessments; }
 
     public ResumeDraft draft(String repository) {
+        if (!assessments.hasAssessments(repository.trim())) throw new NoSuchElementException("Assess this repository in this session first.");
         PortfolioScan scan = assessments.lastScan(repository.trim()).orElseThrow(() -> new NoSuchElementException("Assess this repository first."));
         return build(scan, demonstrated(assessments.latestForRepository(scan.repository())));
     }

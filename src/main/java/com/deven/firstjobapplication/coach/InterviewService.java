@@ -21,6 +21,7 @@ public class InterviewService {
     public InterviewService(AssessmentService assessments, AiCoach coach) { this.assessments = assessments; this.coach = coach; }
 
     public InterviewPrep prepare(String repository) {
+        if (!assessments.hasAssessments(repository.trim())) throw new NoSuchElementException("Assess this repository in this session first.");
         PortfolioScan scan = assessments.lastScan(repository.trim()).orElseThrow(() -> new NoSuchElementException("Assess this repository first."));
         List<Evidence> picks = picks(assessments.latestForRepository(scan.repository()));
         if (picks.isEmpty()) throw new IllegalStateException("No code evidence to ask about yet. Add a feature, push it, and ProofPath will find it.");
