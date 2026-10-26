@@ -107,6 +107,7 @@ class GrowthFeatureTests {
         AssessmentService assessments = mock(AssessmentService.class);
         when(assessments.lastScan("deven065/app")).thenReturn(Optional.of(new PortfolioScan("deven065/app", "main", "abc1234", Instant.now(), Map.of(), 1, 0, false)));
         when(assessments.latestForRepository("deven065/app")).thenReturn(List.of(assessment()));
+        when(assessments.latestForOwner("deven065/app", "deven065")).thenReturn(List.of(assessment()));
         when(github.repository("deven065/app")).thenReturn(new GitHubRepository("deven065/app", "main", "https://github.com/deven065/app", false));
         when(github.repository("deven065/secret")).thenReturn(new GitHubRepository("deven065/secret", "main", "https://github.com/deven065/secret", true));
         ProfileService profiles = new ProfileService(jdbc(), assessments, github, "https://proofpath.example");
@@ -122,6 +123,10 @@ class GrowthFeatureTests {
         assertThat(published.profileUrl()).isEqualTo("https://proofpath.example/u/deven065");
         assertThat(published.badgeMarkdown()).contains("https://proofpath.example/api/public/deven065/badge.svg");
         assertThat(profiles.find("DEVEN065")).isPresent();
+
+        // The page keeps its own copy: wiping the session's assessments afterwards does not empty it.
+        when(assessments.latestForOwner("deven065/app", "deven065")).thenReturn(List.of());
+        assertThat(profiles.find("deven065").orElseThrow().skills()).extracting(ProfileSkill::skill).containsExactly(Skill.JAVA);
 
         profiles.unpublish("deven065");
         assertThat(profiles.find("deven065")).isEmpty();

@@ -14,6 +14,10 @@ import static org.mockito.Mockito.*;
 
 class CareerCoachFlowTests {
     @Test void editedJobCanBeAssessedWatchedAndRestored() {
+        GitHubCredentials.as("guest:flowtestsessionid123456", null, () -> { flow(); return null; });
+    }
+
+    private void flow() {
         JdbcTemplate jdbc = new JdbcTemplate(new DriverManagerDataSource("jdbc:h2:mem:flow_test;DB_CLOSE_DELAY=-1", "sa", ""));
         StateStore store = new StateStore(jdbc);
         GitHubPortfolioService github = mock(GitHubPortfolioService.class);
@@ -26,6 +30,7 @@ class CareerCoachFlowTests {
 
         AssessmentService assessments = new AssessmentService(github, store);
         CareerCoachController controller = new CareerCoachController(new JobDiscoveryService(), assessments, github, store);
+        controller.useAuthStore(new AuthStore(jdbc, "secret", ""));
         JobRequirement job = controller.discover(new CareerCoachController.DiscoverJob("Backend Intern", "Example", "https://example.com/job", "Java SQL"));
         controller.updateRequirements(job.id(), new CareerCoachController.RequirementsUpdate(List.of(Skill.JAVA, Skill.SQL)));
         Assessment initial = controller.assess(new CareerCoachController.AssessRequest(job.id(), "owner/repo", ""));
@@ -45,6 +50,7 @@ class CareerCoachFlowTests {
         assertThat(restarted.watches()).hasSize(1);
         assertThat(restarted.latestAssessment(job.id(), "owner/repo")).get().extracting(value -> value.portfolio().revision()).isEqualTo("two");
         CareerCoachController reopenedController = new CareerCoachController(new JobDiscoveryService(), restarted, github, reopenedStore);
+        reopenedController.useAuthStore(new AuthStore(jdbc, "secret", ""));
         reopenedController.updateRequirements(job.id(), new CareerCoachController.RequirementsUpdate(List.of(Skill.SQL)));
         assertThat(restarted.latestAssessment(job.id(), "owner/repo")).isEmpty();
         assertThat(restarted.history(job.id(), "owner/repo")).hasSize(2);

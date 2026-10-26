@@ -58,7 +58,7 @@ A missing signal means *"not demonstrated in this scan"*. It is never treated as
 | **Gap explanations** | A summary of how well the repository fits the role, plus a small, practical project suggestion for each gap. |
 | **Automatic change detection** | Polls GitHub every minute, or receives a signed GitHub **push webhook**, then rescans automatically. GitHub's compare API lists the changed files, and **only the skills those files affect are reassessed**; the rest keep their verdicts. Evidence from the commit is tagged *changed in this commit*. No manual refresh. |
 | **Demo evidence report** | One click downloads a Markdown report with the job source, repository evidence, gaps, the repository change and the before/after assessment, the evidence the brief asks for. |
-| **Sign in with GitHub** | GitHub OAuth sign-in: pick from your own repositories (private ones too, if you allow it), keep your saved jobs on every device, and scan with your own GitHub rate limit. Tokens are stored encrypted. |
+| **Sign in with GitHub** | GitHub OAuth sign-in: pick from your own repositories (private ones too, if you allow it), and scan with your own GitHub rate limit. Tokens are stored encrypted. |
 | **Email accounts** | Sign up and sign in with an email and password (no GitHub needed). Passwords are stored only as salted PBKDF2 hashes, and repeated wrong passwords lock the account for ten minutes. Email accounts can assess any public repository; picking your own repositories, private repositories, opening issues and the public profile need a GitHub sign-in. |
 | **Portfolio of repositories** | Combine up to five repositories for one job. Each requirement takes the best evidence from any of them, cited with its repository, and the combined score is shown next to each repository's own. |
 | **What changed feed** | Lists every skill that moved between scans (Gap → Demonstrated), with the commit and the number of changed files. |
@@ -180,6 +180,15 @@ Free-tier limits change often. Groq's free tier allows few tokens per minute, so
 |---|---|
 | `GITHUB_TOKEN` | Optional. Raises GitHub's API rate limit and allows private repositories. Use a fine-grained token with **Contents: Read** (and **Webhooks: Read and write** for automatic webhook creation) |
 | `GITHUB_WEBHOOK_PUBLIC_BASE_URL` | Public HTTPS URL of the backend (for example, a tunnel). Needed only to install a push webhook |
+
+### Privacy: no history between sessions
+
+ProofPath keeps no history between sessions, and one visitor can never see another's jobs or scans.
+
+- **Everyone has a private identity.** Signed-in users are identified by their session; everyone else gets a random guest id in a browser-session cookie. Jobs, assessments and scan history belong to that identity, and every endpoint that takes a job id or a repository name checks it.
+- **A session's data is deleted when the session ends:** on sign-out, at the start of a new sign-in, after 24 hours for signed-in sessions, and after one hour without activity for guests. A cleaner runs every ten minutes. Deleted: saved jobs, assessments, scan history, repository watches and cached scans.
+- **What stays:** the account itself (name, hashed password or encrypted GitHub token) and a *published* profile page, which keeps its own snapshot of the verified skills because you chose to make it public.
+- Jobs saved before ownership existed belonged to nobody and are deleted when the server starts.
 
 ### Account emails (optional)
 

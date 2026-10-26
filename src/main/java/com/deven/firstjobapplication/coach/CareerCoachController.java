@@ -22,7 +22,32 @@ public class CareerCoachController {
     private final Map<String, String> jobOwners = new java.util.concurrent.ConcurrentHashMap<>();
     private AuthStore authStore;  // absent in unit tests; then every job is public
     @org.springframework.beans.factory.annotation.Autowired(required = false)
-    void useAuthStore(AuthStore authStore) { this.authStore = authStore; jobOwners.putAll(authStore.jobOwners()); }
+    void useAuthStore(AuthStore authStore) { this.authStore = authStore; jobOwners.putAll(authStore.jobOwners()); discardUnownedJobs(); }
+    /** Jobs saved before ownership existed belong to nobody, so they are deleted rather than shown to the next visitor. */
+    private void discardUnownedJobs() {
+        for (String id : List.copyOf(savedJobs.keySet()))
+            if (!id.equals("demo-backend") && !jobOwners.containsKey(id)) { assessments.forgetJob(id); store.deleteJob(id); savedJobs.remove(id); }
+    }
+    /** Deletes everything one session created: jobs, assessments, scan history and watches. */
+    @org.springframework.context.event.EventListener
+    public void onSessionEnded(SessionEnded ended) { purgeOwner(ended.login()); }
+    void purgeOwner(String login) {
+        if (login == null) return;
+        Set<String> repositories = new HashSet<>();
+        for (String id : jobOwners.entrySet().stream().filter(entry -> login.equals(entry.getValue())).map(Map.Entry::getKey).toList()) {
+            repositories.addAll(assessments.assessedRepositories(id));
+            assessments.forgetJob(id);
+            store.deleteJob(id);
+            savedJobs.remove(id);
+            jobOwners.remove(id);
+        }
+        if (authStore != null) {
+            authStore.disownJobs(login);
+            for (String repository : authStore.watchedBy(login)) { assessments.unwatch(repository); repositories.add(repository); }
+            authStore.disownWatches(login);
+        }
+        for (String repository : repositories) assessments.forgetScanIfUnused(repository);
+    }
     public CareerCoachController(JobDiscoveryService jobs, AssessmentService assessments, GitHubPortfolioService github, StateStore store) {
         this(jobs, assessments, github, store, AiCoach.disabled());
     }
@@ -34,6 +59,7 @@ public class CareerCoachController {
         this.jobs = jobs; this.assessments = assessments; this.github = github; this.store = store; this.coach = coach; this.boards = boards;
         savedJobs = new java.util.concurrent.ConcurrentHashMap<>(store.jobs());
         savedJobs.put("demo-backend", jobs.demoJob());
+        assessments.useJobOwners(jobOwners::get);
     }
 
     @GetMapping("/ai/status") public AiStatus aiStatus() {
@@ -45,8 +71,9 @@ public class CareerCoachController {
     /** Signed-in users see their own jobs on any device; signed-out visitors see jobs nobody owns. */
     @GetMapping("/jobs") public List<JobRequirement> savedJobs() {
         String login = GitHubCredentials.login();
+        if (login == null) return List.of();
         return savedJobs.values().stream().filter(job -> !job.id().equals("demo-backend"))
-                .filter(job -> Objects.equals(jobOwners.get(job.id()), login))
+                .filter(job -> login.equals(jobOwners.get(job.id())))
                 .sorted(Comparator.comparing(JobRequirement::fetchedAt).reversed()).toList();
     }
     private ReadyJobsService readyJobs;
@@ -93,14 +120,15 @@ public class CareerCoachController {
     private JobRequirement remember(JobRequirement job) {
         store.saveJob(job); savedJobs.put(job.id(), job);
         String login = GitHubCredentials.login();
-        if (login != null && authStore != null) { authStore.ownJob(job.id(), login); jobOwners.put(job.id(), login); }
+        if (login != null) { if (authStore != null) authStore.ownJob(job.id(), login); jobOwners.put(job.id(), login); }
         return job;
     }
     /** A job someone signed in to create is only visible to them. */
     private JobRequirement accessible(String jobId) {
         JobRequirement job = Optional.ofNullable(savedJobs.get(jobId)).orElseThrow(() -> new NoSuchElementException("Unknown job id"));
+        if (jobId.equals("demo-backend")) return job;
         String owner = jobOwners.get(jobId);
-        if (owner != null && !owner.equals(GitHubCredentials.login())) throw new SecurityException("This job belongs to another account. Sign in as its owner.");
+        if (owner == null || !owner.equals(GitHubCredentials.login())) throw new SecurityException("This job belongs to another session.");
         return job;
     }
     @PutMapping("/jobs/{id}/requirements") public JobRequirement updateRequirements(@PathVariable String id, @RequestBody RequirementsUpdate body) {
@@ -130,6 +158,7 @@ public class CareerCoachController {
     }
     @GetMapping("/repositories/resolve") public GitHubRepository resolveRepository(@RequestParam String repository) { return github.repository(repository); }
     @GetMapping("/repositories/watch") public WatchStatus watchStatus(@RequestParam String repository) {
+        requireMine(repository);
         RepoRegistration watch = assessments.watch(repository)
                 .orElseThrow(() -> new NoSuchElementException("Repository is not being watched"));
         String revision = assessments.lastScan(repository).map(PortfolioScan::revision).orElse("");
@@ -162,7 +191,12 @@ public class CareerCoachController {
                 : "Watching changes. GitHub will be checked every minute.";
         return new WatchStatus(repo.fullName(), branch, latest.revision(), body.installGitHubWebhook() || alreadyInstalled, message, null);
     }
+    /** Scan data is only shown to whoever assessed the repository in their own session. */
+    private void requireMine(String repository) {
+        if (!assessments.hasAssessments(repository)) throw new NoSuchElementException("This repository has not been assessed in your session.");
+    }
     @GetMapping("/repositories/{owner}/{repo}/last-scan") public PortfolioScan lastScan(@PathVariable String owner, @PathVariable String repo) {
+        requireMine(owner + "/" + repo);
         return assessments.lastScan(owner + "/" + repo).orElseThrow(() -> new NoSuchElementException("Repository has not been scanned"));
     }
     @GetMapping("/assessments/latest") public Assessment latestAssessment(@RequestParam String jobId, @RequestParam String repository) {
@@ -170,7 +204,7 @@ public class CareerCoachController {
         return assessments.latestAssessment(jobId, repository).orElseThrow(() -> new NoSuchElementException("No tracked assessment found. Assess and watch this repository first."));
     }
     @GetMapping("/assessments/history") public List<Assessment> history(@RequestParam String jobId, @RequestParam String repository) {
-        if (savedJobs.containsKey(jobId)) accessible(jobId);
+        accessible(jobId);
         return assessments.history(jobId, repository);
     }
     @PostMapping("/webhooks/github") @ResponseStatus(HttpStatus.ACCEPTED)
