@@ -215,6 +215,7 @@ export default function App() {
   const [issues, setIssues] = useState({})
   const [fixing, setFixing] = useState(false)
   const [authChecked, setAuthChecked] = useState(false)
+  const [waking, setWaking] = useState({ tries: 0, failed: false, run: 0 })
   const [guest, setGuest] = useState(() => { try { return sessionStorage.getItem('pp_guest') === '1' } catch { return false } })
   const [form, setForm] = useState({ mode: 'signin', name: '', email: '', password: '', busy: false, error: '', notice: '' })
   const [resent, setResent] = useState(false)
@@ -239,11 +240,27 @@ export default function App() {
     if (params.has('signedIn')) say('Signed in with GitHub. Pick one of your repositories below.', 'success')
     if (params.has('authError')) say(params.get('authError'), 'error')
     if (params.has('signedIn') || params.has('authError')) window.history.replaceState({}, '', window.location.pathname)
-    request('/auth/status').then(status => {
-      setAuth(status)
-      if (status.user) request('/me/repos').then(setMyRepos).catch(error => say(`Could not list your repositories: ${error.message}`, 'warn'))
-    }).catch(() => {}).finally(() => setAuthChecked(true))
-  }, [])
+    // Free hosting sleeps when idle and the first request can time out while it wakes, so retry instead of showing a blank page.
+    let cancelled = false
+    ;(async () => {
+      for (let attempt = 1; attempt <= 8 && !cancelled; attempt++) {
+        try {
+          const status = await request('/auth/status')
+          if (cancelled) return
+          setAuth(status)
+          if (status.user) request('/me/repos').then(setMyRepos).catch(error => say(`Could not list your repositories: ${error.message}`, 'warn'))
+          setAuthChecked(true)
+          return
+        } catch {
+          if (cancelled) return
+          setWaking(current => ({ ...current, tries: attempt }))
+          await new Promise(resolve => window.setTimeout(resolve, 4000))
+        }
+      }
+      if (!cancelled) setWaking(current => ({ ...current, failed: true }))
+    })()
+    return () => { cancelled = true }
+  }, [waking.run])
 
   useEffect(() => {
     request('/jobs').then(items => {
@@ -466,7 +483,21 @@ export default function App() {
   const assessing = busy.startsWith('Scanning')
   const headline = ['Show', 'what', 'your', 'code']
 
-  if (!authChecked) return <div className="loginScreen" aria-busy="true" />
+  if (!authChecked) return <div className="loginScreen" aria-busy="true">
+    <div className="loginCard">
+      <span className="logo"><Icon name="logo" size={24} /></span>
+      <h1>ProofPath</h1>
+      {waking.failed
+        ? <>
+          <p className="loginLead">The server did not answer. It may be restarting, so please try again in a moment.</p>
+          <button type="button" className="primary" onClick={() => setWaking({ tries: 0, failed: false, run: waking.run + 1 })}>Try again</button>
+        </>
+        : <>
+          <p className="loginLead">{waking.tries > 0 ? 'Waking the server. Free hosting sleeps when idle, so the first visit can take up to a minute…' : 'Loading…'}</p>
+          <div className="progressTrack" aria-hidden="true"><i style={{ width: `${Math.min(95, 12 * (waking.tries + 1))}%` }} /></div>
+        </>}
+    </div>
+  </div>
   if (!auth.user && !guest) return <div className="loginScreen">
     <div className="loginCard">
       <span className="logo"><Icon name="logo" size={24} /></span>
