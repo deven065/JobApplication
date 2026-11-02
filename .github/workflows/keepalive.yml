@@ -1,16 +1,30 @@
 # Render's free web service sleeps after ~15 minutes without traffic and takes about a minute to wake.
-# This pings the live site every 10 minutes (through Netlify's /api proxy to Render) so a visitor or a judge
-# never meets a cold start. Free for public repositories; GitHub pauses scheduled runs after 60 days without repo activity.
+# This pings the backend on a schedule so a visitor or a judge rarely meets a cold start. Free for public
+# repositories; GitHub pauses scheduled runs after 60 days without repo activity.
+#
+# It calls Render directly. Going through Netlify's /api proxy would not work for a sleeping server: Netlify gives up
+# after 26 seconds, but waking Render can take a minute or more, so every attempt would count as a failure.
 name: Keep backend awake
 
 on:
   schedule:
-    - cron: "*/10 * * * *"
+    # GitHub delays scheduled runs under load, so ask often enough that gaps stay under Render's 15-minute sleep timer.
+    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 jobs:
   ping:
     runs-on: ubuntu-latest
+    timeout-minutes: 8
     steps:
-      - name: Ping /api/ai/status
-        run: curl --fail --silent --show-error --max-time 90 --retry 3 --retry-delay 20 https://proofpath-ai.netlify.app/api/ai/status
+      - name: Wake or ping the backend
+        run: |
+          url="https://proofpath-8r5b.onrender.com/api/ai/status"
+          for attempt in 1 2 3 4 5; do
+            code=$(curl --silent --output /dev/null --write-out "%{http_code}" --max-time 120 "$url" || true)
+            echo "attempt $attempt: HTTP ${code:-none}"
+            if [ "$code" = "200" ]; then exit 0; fi
+            sleep 20
+          done
+          echo "Backend did not answer after 5 attempts"
+          exit 1
