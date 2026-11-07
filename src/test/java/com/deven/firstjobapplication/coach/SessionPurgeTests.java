@@ -15,7 +15,8 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class SessionPurgeTests {
-    private static final String ALICE = "guest:aliceaaaaaaaaaaaaaaaaaaaa", BOB = "guest:bobbbbbbbbbbbbbbbbbbbbbbb";
+    // Signed-in identities: guests are not allowed to run assessments.
+    private static final String ALICE = "alice-gh", BOB = "bob-gh";
 
     private final JdbcTemplate jdbc = new JdbcTemplate(new DriverManagerDataSource("jdbc:h2:mem:purge_" + System.nanoTime() + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1", "sa", ""));
     private final StateStore store = new StateStore(jdbc);
@@ -56,6 +57,18 @@ class SessionPurgeTests {
         assertThat(assessments.watch("o/r")).isEmpty();
         assertThat(assessments.lastScan("o/r")).isEmpty();
         assertThat(auth.jobOwners()).doesNotContainKey(alices.id()).containsKey(bobs.id());
+    }
+
+    @Test void aGuestWhoSignsInKeepsTheJobsTheyReadButOthersDoNot() {
+        String guest = "guest:visitorrrrrrrrrrrrrrrrrr", otherGuest = "guest:someoneelseeeeeeeeeeeeee";
+        JobRequirement mine = jobFor(guest), theirs = jobFor(otherGuest);
+
+        controller.onSessionAdopted(new SessionAdopted(guest, ALICE));
+
+        assertThat(GitHubCredentials.as(ALICE, null, controller::savedJobs)).extracting(JobRequirement::id).containsExactly(mine.id());
+        assertThat(GitHubCredentials.as(guest, null, controller::savedJobs)).isEmpty();
+        assertThat(GitHubCredentials.as(otherGuest, null, controller::savedJobs)).extracting(JobRequirement::id).containsExactly(theirs.id());
+        assertThat(auth.jobOwners()).containsEntry(mine.id(), ALICE).containsEntry(theirs.id(), otherGuest);  // persisted, not just in memory
     }
 
     @Test void oneVisitorCanNeverReadAnotherVisitorsJobOrHistory() {

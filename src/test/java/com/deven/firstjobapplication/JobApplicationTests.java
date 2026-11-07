@@ -48,8 +48,8 @@ class JobApplicationTests {
         HttpResponse<String> saved = client.send(HttpRequest.newBuilder(URI.create(base + "/jobs")).GET().build(), HttpResponse.BodyHandlers.ofString());
         assertThat(saved.body()).contains(id);
         HttpResponse<String> history = client.send(HttpRequest.newBuilder(URI.create(base + "/assessments/history?jobId=" + id + "&repository=owner%2Frepo")).GET().build(), HttpResponse.BodyHandlers.ofString());
-        assertThat(history.statusCode()).isEqualTo(200);
-        assertThat(history.body()).isEqualTo("[]");
+        assertThat(history.statusCode()).isEqualTo(403);  // a guest may read a posting but not see results
+        assertThat(history.body()).contains("Sign in or create an account");
     }
 
 }

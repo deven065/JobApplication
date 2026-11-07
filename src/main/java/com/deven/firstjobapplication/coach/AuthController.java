@@ -154,11 +154,15 @@ public class AuthController {
         return github.userRepositories();
     }
 
-    /** A new sign-in starts clean: leftovers of the account's earlier session and of this browser's guest session are deleted. */
+    /** A new sign-in starts clean: leftovers of the account's earlier session are deleted, and this browser's guest jobs move to the account. */
     private void endEarlierSessions(String login, HttpServletRequest request) {
         events.publishEvent(new SessionEnded(login));
         String guest = SessionFilter.guestId(request);
-        if (guest != null) events.publishEvent(new SessionEnded(SessionFilter.GUEST_PREFIX + guest));
+        if (guest != null) {
+            // Jobs read as a guest move to the new account; the guest identity itself is retired.
+            events.publishEvent(new SessionAdopted(SessionFilter.GUEST_PREFIX + guest, login));
+            auth.forgetGuest(guest);
+        }
     }
 
     private static ResponseEntity<Void> redirect(String location, ResponseCookie cookie) {

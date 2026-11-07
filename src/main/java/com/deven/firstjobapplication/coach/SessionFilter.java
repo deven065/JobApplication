@@ -62,6 +62,15 @@ public class SessionFilter extends OncePerRequestFilter {
     }
     private static String newGuestId() { byte[] bytes = new byte[24]; RANDOM.nextBytes(bytes); return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes); }
 
+    /**
+     * Guests may read a job posting and look around, but running an assessment and seeing any result needs an account.
+     * Enforced here on the server, so hiding a button in the page is not the only protection.
+     */
+    static void requireAccount() {
+        String login = GitHubCredentials.login();
+        if (login == null || login.startsWith(GUEST_PREFIX)) throw new SecurityException("Sign in or create an account to run assessments and see results.");
+    }
+
     static String sessionId(HttpServletRequest request) { return cookie(request, COOKIE); }
     /** The guest id from the cookie, or null when absent or malformed. */
     static String guestId(HttpServletRequest request) {

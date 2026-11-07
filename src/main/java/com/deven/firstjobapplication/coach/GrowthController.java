@@ -25,8 +25,8 @@ public class GrowthController {
     }
 
     @GetMapping("/learning-paths") public List<LearningPath> learningPaths() { return LearningPaths.all(); }
-    @GetMapping("/resume") public ResumeDraft resume(@RequestParam String repository) { return resume.draft(repository); }
-    @GetMapping("/interview") public InterviewPrep interview(@RequestParam String repository) { return interviews.prepare(repository); }
+    @GetMapping("/resume") public ResumeDraft resume(@RequestParam String repository) { SessionFilter.requireAccount(); return resume.draft(repository); }
+    @GetMapping("/interview") public InterviewPrep interview(@RequestParam String repository) { SessionFilter.requireAccount(); return interviews.prepare(repository); }
 
     /** The signed-in user's own published profile (204 when nothing is published). */
     @GetMapping("/profile") public ResponseEntity<PublicProfile> myProfile() {

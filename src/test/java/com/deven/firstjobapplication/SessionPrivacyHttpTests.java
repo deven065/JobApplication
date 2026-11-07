@@ -65,6 +65,42 @@ class SessionPrivacyHttpTests {
         assertThat(status.path("user").path("provider").asText()).isEqualTo("email"); // the account itself did
     }
 
+    @Test void aGuestWhoCreatesAnAccountKeepsTheirPostingAndLeavesNothingBehindAsAGuest() throws Exception {
+        HttpClient browser = browser();
+        String job = newJob(browser);                                                  // read as a guest
+        assertThat(post(browser, "/auth/register", "{\"name\":\"Mina\",\"email\":\"mina-adopt@example.com\",\"password\":\"long enough pw\"}").statusCode()).isEqualTo(200);
+        assertThat(get(browser, "/jobs").body()).contains(job);                        // moved to the new account
+        assertThat(get(browser, "/assessments/history?jobId=" + job + "&repository=o%2Fr").statusCode()).isEqualTo(200);  // and now allowed
+
+        HttpClient anotherBrowser = browser();
+        assertThat(get(anotherBrowser, "/jobs").body()).isEqualTo("[]");               // nobody else sees it
+    }
+
+    @Test void guestsCanReadAPostingButEverythingThatShowsResultsNeedsAnAccount() throws Exception {
+        HttpClient guest = browser();
+        String job = newJob(guest);                                                    // allowed: reading a posting
+        assertThat(get(guest, "/jobs").body()).contains(job);
+        assertThat(post(guest, "/assessments", "{\"jobId\":\"" + job + "\",\"repository\":\"o/r\"}").statusCode()).isEqualTo(403);
+        assertThat(post(guest, "/repositories/watch", "{\"repository\":\"o/r\",\"branch\":\"\",\"installGitHubWebhook\":false}").statusCode()).isEqualTo(403);
+        for (String path : new String[]{"/assessments/latest?jobId=" + job + "&repository=o%2Fr", "/assessments/history?jobId=" + job + "&repository=o%2Fr",
+                "/assessments/combined?jobId=" + job + "&repositories=o%2Fr", "/resume?repository=o%2Fr", "/interview?repository=o%2Fr",
+                "/jobs/ready?repository=o%2Fr&source=GREENHOUSE&boards=stripe", "/repositories/o/r/last-scan", "/repositories/watch?repository=o%2Fr"}) {
+            HttpResponse<String> response = get(guest, path);
+            assertThat(response.statusCode()).as(path).isEqualTo(403);
+            assertThat(response.body()).as(path).contains("Sign in or create an account");
+        }
+        assertThat(get(guest, "/learning-paths").statusCode()).isEqualTo(200);        // generic content stays open
+    }
+
+    @Test void aSignedInUserPassesTheGate() throws Exception {
+        HttpClient user = browser();
+        assertThat(post(user, "/auth/register", "{\"name\":\"Rao\",\"email\":\"rao-gate@example.com\",\"password\":\"long enough pw\"}").statusCode()).isEqualTo(200);
+        String job = newJob(user);
+        HttpResponse<String> history = get(user, "/assessments/history?jobId=" + job + "&repository=o%2Fr");
+        assertThat(history.statusCode()).isEqualTo(200);
+        assertThat(history.body()).isEqualTo("[]");
+    }
+
     @Test void publicEndpointsAndHealthChecksDoNotCreateGuests() throws Exception {
         HttpClient client = browser();
         get(client, "/ai/status");

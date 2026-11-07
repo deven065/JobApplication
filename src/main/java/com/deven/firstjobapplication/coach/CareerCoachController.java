@@ -31,6 +31,15 @@ public class CareerCoachController {
     /** Deletes everything one session created: jobs, assessments, scan history and watches. */
     @org.springframework.context.event.EventListener
     public void onSessionEnded(SessionEnded ended) { purgeOwner(ended.login()); }
+    /** A guest who signs in keeps the jobs they read: ownership moves from the guest identity to the account. */
+    @org.springframework.context.event.EventListener
+    public void onSessionAdopted(SessionAdopted adopted) {
+        for (String id : jobOwners.entrySet().stream().filter(entry -> adopted.fromGuest().equals(entry.getValue())).map(Map.Entry::getKey).toList()) {
+            jobOwners.put(id, adopted.toLogin());
+            if (authStore != null) authStore.ownJob(id, adopted.toLogin());
+        }
+        if (authStore != null) authStore.disownJobs(adopted.fromGuest());  // nothing left under the guest id
+    }
     void purgeOwner(String login) {
         if (login == null) return;
         Set<String> repositories = new HashSet<>();
@@ -82,6 +91,7 @@ public class CareerCoachController {
     /** Open postings on the given boards, ranked by how much of each one this repository already proves. */
     @GetMapping("/jobs/ready") public ReadyJobResults readyJobs(@RequestParam String repository, @RequestParam String source,
                                                                 @RequestParam String boards, @RequestParam(required = false) String q) {
+        SessionFilter.requireAccount();
         if (readyJobs == null) throw new IllegalStateException("Job matching is not available.");
         return readyJobs.rank(repository, source, Arrays.asList(boards.split("[,\\s]+")), q);
     }
@@ -145,10 +155,12 @@ public class CareerCoachController {
         return updated;
     }
     @PostMapping("/assessments") public Assessment assess(@RequestBody AssessRequest body) {
+        SessionFilter.requireAccount();
         return assessments.assess(accessible(body.jobId()), body.repository(), body.branch());
     }
     /** The job judged against several already-assessed repositories at once (the best evidence per requirement wins). */
     @GetMapping("/assessments/combined") public CombinedPortfolio combined(@RequestParam String jobId, @RequestParam String repositories) {
+        SessionFilter.requireAccount();
         JobRequirement job = accessible(jobId);
         List<String> names = Arrays.stream(repositories.split(",")).map(String::trim).filter(n -> !n.isEmpty()).distinct().limit(5).toList();
         List<Assessment> found = new ArrayList<>();
@@ -169,6 +181,7 @@ public class CareerCoachController {
     }
     @PostMapping("/repositories/watch") @ResponseStatus(HttpStatus.ACCEPTED)
     public WatchStatus watch(@RequestBody WatchRequest body) {
+        SessionFilter.requireAccount();
         GitHubRepository repo = github.repository(body.repository());
         String branch = blankToDefault(body.branch(), repo.defaultBranch());
         if (body.installGitHubWebhook() && !github.canCreateWebhooks())
@@ -193,6 +206,7 @@ public class CareerCoachController {
     }
     /** Scan data is only shown to whoever assessed the repository in their own session. */
     private void requireMine(String repository) {
+        SessionFilter.requireAccount();
         if (!assessments.hasAssessments(repository)) throw new NoSuchElementException("This repository has not been assessed in your session.");
     }
     @GetMapping("/repositories/{owner}/{repo}/last-scan") public PortfolioScan lastScan(@PathVariable String owner, @PathVariable String repo) {
@@ -200,10 +214,12 @@ public class CareerCoachController {
         return assessments.lastScan(owner + "/" + repo).orElseThrow(() -> new NoSuchElementException("Repository has not been scanned"));
     }
     @GetMapping("/assessments/latest") public Assessment latestAssessment(@RequestParam String jobId, @RequestParam String repository) {
+        SessionFilter.requireAccount();
         accessible(jobId);
         return assessments.latestAssessment(jobId, repository).orElseThrow(() -> new NoSuchElementException("No tracked assessment found. Assess and watch this repository first."));
     }
     @GetMapping("/assessments/history") public List<Assessment> history(@RequestParam String jobId, @RequestParam String repository) {
+        SessionFilter.requireAccount();
         accessible(jobId);
         return assessments.history(jobId, repository);
     }

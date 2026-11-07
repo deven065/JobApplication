@@ -219,6 +219,13 @@ export default function App() {
   const [guest, setGuest] = useState(() => { try { return sessionStorage.getItem('pp_guest') === '1' } catch { return false } })
   const [form, setForm] = useState({ mode: 'signin', name: '', email: '', password: '', busy: false, error: '', notice: '' })
   const [resent, setResent] = useState(false)
+  /** Guests may read a posting; running an assessment and seeing results needs an account. Back to the sign-in screen, keeping what they typed. */
+  const requireAccount = (text = 'Sign in or create an account to run the assessment and see your results. Your job and repository are kept.') => {
+    try { sessionStorage.removeItem('pp_guest') } catch { /* private mode */ }
+    setGuest(false)
+    setForm(current => ({ ...current, mode: 'signin', error: '', notice: text }))
+    window.scrollTo(0, 0)
+  }
   const continueAsGuest = () => { try { sessionStorage.setItem('pp_guest', '1') } catch { /* private mode */ } setGuest(true) }
   const [myRepos, setMyRepos] = useState([])
   const [ready, setReady] = useState({ source: 'GREENHOUSE', boards: '', q: '', results: null })
@@ -431,6 +438,7 @@ export default function App() {
   }
   async function assess() {
     if (!job || !repository.trim()) return say('Choose a job and enter a repository first.', 'warn')
+    if (!auth.user) return requireAccount()
     if (!sameSkills(selectedSkills, job.requiredSkills)) return say('Save your requirement changes before assessing.', 'warn')
     setBusy(ai?.enabled ? 'Scanning the code and asking the AI to review the evidence…' : 'Scanning the code and comparing evidence…')
     try {
@@ -443,6 +451,7 @@ export default function App() {
     } catch (error) { fail(error) } finally { setBusy('') }
   }
   async function watch() {
+    if (!auth.user) return requireAccount()
     if (!assessment) return say('Assess the repository once before watching it.', 'warn')
     setBusy('Starting change tracking…')
     try {
@@ -519,8 +528,8 @@ export default function App() {
         {form.mode === 'signin' && auth.passwordReset && <button type="button" className="ghost forgotLink" onClick={() => setForm({ ...form, mode: 'forgot', error: '', notice: '' })}>Forgot your password?</button>}
         {form.mode === 'forgot' && <button type="button" className="ghost forgotLink" onClick={() => setForm({ ...form, mode: 'signin', error: '', notice: '' })}>Back to sign in</button>}
       </form>
-      <button type="button" className="ghost" onClick={continueAsGuest}>Continue without signing in</button>
-      <p className="muted small">Email accounts can assess any public repository. Signing in with GitHub also lets you pick your own repositories, include private ones, and open issues.</p>
+      <button type="button" className="ghost" onClick={continueAsGuest}>Continue as a guest (limited)</button>
+      <p className="muted small">Guests can read job postings and look around. Running an assessment and seeing results needs an account. Email accounts can assess any public repository; GitHub also lets you pick your own repositories, include private ones and open issues.</p>
     </div>
   </div>
 
@@ -532,9 +541,13 @@ export default function App() {
         <AnimatePresence>{watching && <m.span key="live" className="pill live" initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.8 }} transition={spring}><i className="dot" />Watching {repository}</m.span>}</AnimatePresence>
         {auth.user
           ? <span className="account">{auth.user.avatarUrl && <img src={auth.user.avatarUrl} alt="" width="26" height="26" />}<span>{auth.user.provider === 'email' ? auth.user.name : auth.user.login}</span><button type="button" className="ghost" onClick={signOut}>Sign out</button></span>
-          : auth.configured && <a className="githubButton" href={`${API}/auth/github/login`}><Icon name="github" size={16} />Sign in with GitHub</a>}
+          : <button type="button" className="githubButton" onClick={() => requireAccount('Sign in or create an account to run assessments and see results.')}>Sign in / Sign up</button>}
       </div>
     </m.nav>
+    {!auth.user && <div className="guestBanner" role="status">
+      <span><strong>Guest mode.</strong> You can read job postings. Running the assessment and seeing results needs an account.</span>
+      <button type="button" className="primary" onClick={() => requireAccount('Sign in or create an account to run assessments and see results.')}>Sign in or sign up</button>
+    </div>}
     {auth.user && auth.emailPending && <div className="verifyBanner" role="status">
       <span>Confirm your email: we sent a link to {auth.user.login.replace('email:', '')}.</span>
       <button type="button" className="ghost" disabled={resent} onClick={() => { request('/auth/resend-verification', { method: 'POST' }).then(() => setResent(true)).catch(error => say(error.message, 'error')) }}>{resent ? 'Sent' : 'Resend link'}</button>
@@ -612,7 +625,7 @@ export default function App() {
         <div className="buttons"><button className="secondary" type="button" disabled={!!busy} onClick={resolveRepository}>Check repository</button></div>
         <AnimatePresence>{repoDetails && <m.div key={repoDetails.fullName} className="found" initial={{ opacity: 0, height: 0, marginTop: 0 }} animate={{ opacity: 1, height: 'auto', marginTop: 14 }} exit={{ opacity: 0, height: 0, marginTop: 0 }}><Icon name="check" size={16} /><span>Found <a href={repoDetails.htmlUrl} target="_blank" rel="noreferrer">{repoDetails.fullName}</a> · default branch <code>{repoDetails.defaultBranch}</code></span></m.div>}</AnimatePresence>
         <div className="cta">
-          <m.button className="primary big shine" type="button" onClick={assess} disabled={!!busy || !job || !repository.trim()} whileHover={{ y: -2 }} whileTap={{ scale: 0.96 }} transition={spring}>{assessment ? 'Rescan now' : 'Assess repository'}<Icon name="arrow" size={18} /></m.button>
+          <m.button className="primary big shine" type="button" onClick={assess} disabled={!!busy || !job || !repository.trim()} whileHover={{ y: -2 }} whileTap={{ scale: 0.96 }} transition={spring}>{!auth.user ? 'Sign in to assess' : assessment ? 'Rescan now' : 'Assess repository'}<Icon name="arrow" size={18} /></m.button>
           <m.button className={`secondary big ${watching ? 'isLive' : ''}`} type="button" onClick={watch} disabled={!!busy || !assessment} whileHover={{ y: -2 }} whileTap={{ scale: 0.96 }} transition={spring}>{watching ? <><i className="dot" />Watching changes</> : <><Icon name="eye" size={18} />Watch changes</>}</m.button>
         </div>
         {watching && <p className="muted small">Polling GitHub every minute{installWebhook ? ' and listening for push webhooks' : ''}. This page checks for updates every few seconds.</p>}

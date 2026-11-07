@@ -14,7 +14,7 @@ import static org.mockito.Mockito.*;
 
 class CareerCoachFlowTests {
     @Test void editedJobCanBeAssessedWatchedAndRestored() {
-        GitHubCredentials.as("guest:flowtestsessionid123456", null, () -> { flow(); return null; });
+        GitHubCredentials.as("flow-test-user", null, () -> { flow(); return null; });
     }
 
     private void flow() {

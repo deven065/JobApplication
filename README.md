@@ -187,6 +187,7 @@ ProofPath keeps no history between sessions, and one visitor can never see anoth
 
 - **Everyone has a private identity.** Signed-in users are identified by their session; everyone else gets a random guest id in a browser-session cookie. Jobs, assessments and scan history belong to that identity, and every endpoint that takes a job id or a repository name checks it.
 - **A session's data is deleted when the session ends:** on sign-out, at the start of a new sign-in, after 24 hours for signed-in sessions, and after one hour without activity for guests. A cleaner runs every ten minutes. Deleted: saved jobs, assessments, scan history, repository watches and cached scans.
+- **Guests are limited by design.** "Continue as a guest" lets someone read a job posting and look around. Running an assessment and seeing any result (assessments, history, resume, interview questions, ready jobs, combined portfolio, watching a repository) needs an account, and the server enforces it, not just the page. A guest who then signs up keeps the postings they read: the jobs move to the new account.
 - **What stays:** the account itself (name, hashed password or encrypted GitHub token) and a *published* profile page, which keeps its own snapshot of the verified skills because you chose to make it public.
 - Jobs saved before ownership existed belonged to nobody and are deleted when the server starts.
 

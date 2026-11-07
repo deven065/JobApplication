@@ -445,3 +445,8 @@ a.metaItem:hover { color: var(--link); }
 .combinedSkills li > div { display: flex; align-items: center; gap: 8px; }
 .combinedSkills p { margin: 6px 0; }
 .combinedSkills a { display: block; color: var(--link); font-weight: 600; font-size: .85rem; }
+
+/* Guest mode */
+.guestBanner { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 16px; margin: 10px auto 0; max-width: 1100px; padding: 10px 16px; border-radius: var(--radius-sm); background: var(--primary-soft); color: var(--ink); font-size: .9rem; }
+.guestBanner .primary { padding: 7px 14px; font-size: .85rem; }
+button.githubButton { border: 0; }
