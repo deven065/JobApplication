@@ -61,8 +61,9 @@ public final class Models {
         public AuthUser { if (provider == null || provider.isBlank()) provider = "github"; }
     }
     /** emailPending: an email account whose address is not confirmed yet. passwordReset: the server can send reset emails. */
-    public record AuthStatus(boolean configured, AuthUser user, boolean emailPending, boolean passwordReset) {
-        public AuthStatus(boolean configured, AuthUser user) { this(configured, user, false, false); }
+    public record AuthStatus(boolean configured, AuthUser user, boolean emailPending, boolean passwordReset, boolean googleConfigured) {
+        public AuthStatus(boolean configured, AuthUser user, boolean emailPending, boolean passwordReset) { this(configured, user, emailPending, passwordReset, false); }
+        public AuthStatus(boolean configured, AuthUser user) { this(configured, user, false, false, false); }
     }
     public record RepoSummary(String fullName, boolean privateRepository, String defaultBranch, String language, String description, Instant pushedAt) { }
     /** A posting scored against the skills the student's repository already shows. score is 0–100. */

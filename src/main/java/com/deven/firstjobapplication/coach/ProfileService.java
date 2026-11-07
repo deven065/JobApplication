@@ -32,7 +32,7 @@ public class ProfileService {
     }
 
     public PublicProfile publish(AuthUser user, String repository) {
-        if ("email".equals(user.provider()))
+        if (!"github".equals(user.provider()))
             throw new IllegalArgumentException("Publishing a verified-skills page needs a GitHub sign-in, so ProofPath can confirm the repository is yours.");
         String repo = repository == null ? "" : repository.trim();
         if (!repo.toLowerCase(Locale.ROOT).startsWith(user.login().toLowerCase(Locale.ROOT) + "/"))

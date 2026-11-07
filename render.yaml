@@ -25,6 +25,10 @@ services:
         value: https://proofpath-ai.netlify.app
       - key: FRONTEND_ORIGIN          # Netlify forwards the browser's Origin header, so the backend must allow it
         value: https://proofpath-ai.netlify.app
+      - key: GOOGLE_OAUTH_CLIENT_ID   # optional, enables "Continue with Google" (Google Cloud Console -> Credentials)
+        sync: false
+      - key: GOOGLE_OAUTH_CLIENT_SECRET
+        sync: false
       - key: RESEND_API_KEY           # optional: enables confirm-your-email and password-reset emails (free at resend.com)
         sync: false
       - key: EMAIL_FROM               # optional sender, e.g. ProofPath <hello@yourdomain.com> once the domain is verified in Resend

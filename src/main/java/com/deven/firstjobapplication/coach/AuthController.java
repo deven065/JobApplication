@@ -36,16 +36,17 @@ public class AuthController {
     private final AuthStore auth;
     private final AccountService accounts;
     private final org.springframework.context.ApplicationEventPublisher events;
+    private final GoogleOAuth google;
     private final GitHubPortfolioService github;
     private final String clientId, clientSecret, baseUrl;
     private final ObjectMapper json = new ObjectMapper();
     private final RestClient http = RestClient.builder().defaultHeader("User-Agent", "ProofPath").build();
 
-    public AuthController(AuthStore auth, AccountService accounts, org.springframework.context.ApplicationEventPublisher events, GitHubPortfolioService github,
+    public AuthController(AuthStore auth, AccountService accounts, org.springframework.context.ApplicationEventPublisher events, GoogleOAuth google, GitHubPortfolioService github,
                           @Value("${github.oauth.client-id:}") String clientId,
                           @Value("${github.oauth.client-secret:}") String clientSecret,
                           @Value("${app.base-url:http://localhost:5173}") String baseUrl) {
-        this.auth = auth; this.accounts = accounts; this.events = events; this.github = github;
+        this.auth = auth; this.accounts = accounts; this.events = events; this.google = google; this.github = github;
         this.clientId = clientId == null ? "" : clientId.trim();
         this.clientSecret = clientSecret == null ? "" : clientSecret.trim();
         this.baseUrl = baseUrl.trim().replaceAll("/+$", "");
@@ -57,7 +58,7 @@ public class AuthController {
     @GetMapping("/auth/status") public AuthStatus status() {
         String login = GitHubCredentials.login();
         return new AuthStatus(configured(), login == null ? null : auth.user(login).map(AuthStore.Session::user).orElse(null),
-                accounts.unverified(login), accounts.resetAvailable());
+                accounts.unverified(login), accounts.resetAvailable(), google.configured());
     }
 
     /** Starts sign-in. private=true also asks for the repo scope so private repositories can be assessed. */

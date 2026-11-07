@@ -59,6 +59,7 @@ A missing signal means *"not demonstrated in this scan"*. It is never treated as
 | **Automatic change detection** | Polls GitHub every minute, or receives a signed GitHub **push webhook**, then rescans automatically. GitHub's compare API lists the changed files, and **only the skills those files affect are reassessed**; the rest keep their verdicts. Evidence from the commit is tagged *changed in this commit*. No manual refresh. |
 | **Demo evidence report** | One click downloads a Markdown report with the job source, repository evidence, gaps, the repository change and the before/after assessment, the evidence the brief asks for. |
 | **Sign in with GitHub** | GitHub OAuth sign-in: pick from your own repositories (private ones too, if you allow it), and scan with your own GitHub rate limit. Tokens are stored encrypted. |
+| **Continue with Google** | One-click sign-in with a Google account (OAuth 2.0, scopes `openid email profile`). Only verified Google emails are accepted. A Google account is its own account type, so it works like an email account: it can assess any public repository, while repository picking, private repositories, issues and the public profile need GitHub. |
 | **Email accounts** | Sign up and sign in with an email and password (no GitHub needed). Passwords are stored only as salted PBKDF2 hashes, and repeated wrong passwords lock the account for ten minutes. Email accounts can assess any public repository; picking your own repositories, private repositories, opening issues and the public profile need a GitHub sign-in. |
 | **Portfolio of repositories** | Combine up to five repositories for one job. Each requirement takes the best evidence from any of them, cited with its repository, and the combined score is shown next to each repository's own. |
 | **What changed feed** | Lists every skill that moved between scans (Gap → Demonstrated), with the commit and the number of changed files. |
@@ -190,6 +191,20 @@ ProofPath keeps no history between sessions, and one visitor can never see anoth
 - **Guests are limited by design.** "Continue as a guest" lets someone read a job posting and look around. Running an assessment and seeing any result (assessments, history, resume, interview questions, ready jobs, combined portfolio, watching a repository) needs an account, and the server enforces it, not just the page. A guest who then signs up keeps the postings they read: the jobs move to the new account.
 - **What stays:** the account itself (name, hashed password or encrypted GitHub token) and a *published* profile page, which keeps its own snapshot of the verified skills because you chose to make it public.
 - Jobs saved before ownership existed belonged to nobody and are deleted when the server starts.
+
+### Continue with Google (optional)
+
+| Variable | Purpose |
+|---|---|
+| `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET` | From a Google Cloud **OAuth client ID** of type *Web application* |
+
+Setup (about 5 minutes):
+
+1. [Google Cloud Console](https://console.cloud.google.com) → create a project → **APIs & Services → OAuth consent screen**. Choose **External**, enter the app name and your support email, keep the default scopes (`openid`, `email`, `profile`) and **publish the app** (status *In production*) so anyone can sign in. With only these basic scopes no Google review is needed.
+2. **Credentials → Create credentials → OAuth client ID → Web application.** Under **Authorized redirect URIs** add `https://proofpath-ai.netlify.app/api/auth/google/callback` and, for local work, `http://localhost:5173/api/auth/google/callback`. One client can hold both.
+3. Put the client ID and secret in your local `.env` and in Render's environment, then restart the backend. The button only appears when both values are set.
+
+Without them nothing breaks: the "Continue with Google" button is simply hidden.
 
 ### Account emails (optional)
 
@@ -366,6 +381,7 @@ The AI is never the only source of truth. `AssessmentService` checks every resul
 | `GET` `POST` | `/api/profile` · `/api/profile/publish` · `/api/profile/unpublish` | Manage your public profile (signed in) |
 | `GET` | `/api/public/{login}` · `/api/public/{login}/badge.svg?skill=SQL` | Public profile and README badge |
 | `GET` | `/api/jobs/ready?repository=owner/repo&source=GREENHOUSE&boards=stripe,airbnb&q=engineer` | Open postings ranked by how much of each one the repository proves |
+| `GET` | `/api/auth/google/login` → `/api/auth/google/callback` | Google OAuth sign-in |
 | `POST` | `/api/auth/register` · `/api/auth/login` | Email and password sign-up and sign-in (`{name, email, password}`) |
 | `POST` | `/api/auth/forgot` · `/api/auth/reset` · `/api/auth/verify` · `/api/auth/resend-verification` | Password reset and email confirmation (need `RESEND_API_KEY`) |
 | `GET` | `/api/assessments/combined?jobId=…&repositories=a/b,c/d` | One job judged against several assessed repositories |
