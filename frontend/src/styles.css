@@ -460,3 +460,25 @@ button.githubButton { border: 0; }
 .wordmark { font-family: var(--serif); font-weight: 700; font-size: 1.3rem; letter-spacing: -.015em; color: var(--ink); }
 .wordmark em, .loginCard h1 span { font-style: normal; color: var(--primary); }
 .brand .logo svg { transition: transform .25s ease; }
+
+/* Intro: the mark draws itself, the name rises, then the screen fades into the app */
+.intro { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; cursor: pointer;
+  background: radial-gradient(ellipse at 50% 42%, #FFFFFF 0%, var(--bg) 62%);
+  transition: opacity .6s ease, transform .6s cubic-bezier(.4, 0, .2, 1), filter .6s ease; }
+.intro.leaving { opacity: 0; transform: scale(1.06); filter: blur(8px); pointer-events: none; }
+.introStack { display: grid; justify-items: center; gap: 22px; }
+.introMark { width: min(52vw, 250px); height: auto; overflow: visible; }
+.introMark .draw, .introMark .tick { stroke-dasharray: 1; animation: introDraw .95s cubic-bezier(.65, 0, .35, 1) .15s both; }
+.introMark .tick { animation-duration: .45s; animation-delay: 1.4s; }
+.introMark .pop { transform-box: fill-box; transform-origin: center; animation: introPop .55s cubic-bezier(.34, 1.56, .64, 1) both; }
+.introMark .pop.a { animation-delay: .3s; }
+.introMark .pop.b { animation-delay: .65s; }
+.introMark .pop.c { animation-delay: 1.05s; animation-duration: .65s; }
+.introMark .ping { stroke: var(--primary); stroke-width: 1.1; transform-box: fill-box; transform-origin: center; opacity: 0; animation: introPing 1s ease-out 1.5s forwards; }  /* forwards, not both: it must stay invisible during its delay */
+.introWord { font-family: var(--serif); font-weight: 700; font-size: clamp(2rem, 7vw, 2.9rem); letter-spacing: -.02em; color: var(--ink);
+  animation: introRise .7s cubic-bezier(.2, .7, .2, 1) 1.65s both; }
+.introWord em { font-style: normal; color: var(--primary); }
+@keyframes introDraw { 0% { stroke-dashoffset: 1; opacity: 0; } 1% { opacity: 1; } 100% { stroke-dashoffset: 0; opacity: 1; } }
+@keyframes introPop { 0% { transform: scale(0); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+@keyframes introPing { 0% { opacity: .6; transform: scale(1); } 100% { opacity: 0; transform: scale(2.2); } }
+@keyframes introRise { 0% { opacity: 0; transform: translateY(14px); letter-spacing: .08em; } 100% { opacity: 1; transform: none; letter-spacing: -.02em; } }
