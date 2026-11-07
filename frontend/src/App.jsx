@@ -255,7 +255,8 @@ export default function App() {
           const status = await request('/auth/status')
           if (cancelled) return
           setAuth(status)
-          if (status.user) request('/me/repos').then(setMyRepos).catch(error => say(`Could not list your repositories: ${error.message}`, 'warn'))
+          // Only GitHub accounts have repositories to list; Google and email accounts have no GitHub access.
+          if (status.user?.provider === 'github') request('/me/repos').then(setMyRepos).catch(error => say(`Could not list your repositories: ${error.message}`, 'warn'))
           setAuthChecked(true)
           return
         } catch {
