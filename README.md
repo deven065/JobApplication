@@ -300,6 +300,16 @@ docker run -p 8081:8081 --env-file .env -e DATABASE_URL=jdbc:postgresql://host.d
 
 Inside a container `localhost` is the container itself, so point `DATABASE_URL` at `host.docker.internal` to reach a PostgreSQL server on your computer. To run the app together with its own PostgreSQL, use `docker compose up --build` (see [Using PostgreSQL](#using-postgresql)).
 
+### If Netlify pauses your deploys: use Render alone
+
+The Docker image on Render already contains the React app, so the Render URL is a complete site (pages, `/u/<login>` profiles, reset and verify links, and the API) with no Netlify in front. Netlify's free credits can run out and pause production deploys; the live site keeps serving, but new frontend changes stop going out. To make Render the home instead:
+
+1. On Render set `APP_BASE_URL` to the Render URL (for example `https://proofpath-8r5b.onrender.com`) and redeploy.
+2. In the GitHub OAuth App and the Google OAuth client, make sure the Render callback is registered: `<Render URL>/api/auth/github/callback` and `<Render URL>/api/auth/google/callback`.
+3. Share the Render URL. Netlify and `netlify.toml` can stay or be removed; nothing else depends on them.
+
+A side benefit: with no Netlify proxy in the middle, the 26-second proxy limit disappears, so a cold start never shows a gateway error.
+
 ### Frontend on Netlify, API on Render
 
 Netlify only hosts static files, so the Spring Boot API stays on Render (or any host that runs the Docker image) and Netlify serves the React app. `netlify.toml` forwards `/api/*` to the backend, so the browser sees one origin and the sign-in cookie works.
