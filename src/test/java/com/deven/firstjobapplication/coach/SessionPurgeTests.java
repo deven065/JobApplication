@@ -95,6 +95,17 @@ class SessionPurgeTests {
         assertThat(GitHubCredentials.as(ALICE, null, restarted::savedJobs)).isEmpty();
     }
 
+    @Test void manyRequestsFromOneNewGuestAtOnceNeverCollide() throws Exception {
+        var pool = java.util.concurrent.Executors.newFixedThreadPool(16);
+        var start = new java.util.concurrent.CountDownLatch(1);
+        List<java.util.concurrent.Future<?>> all = new java.util.ArrayList<>();
+        for (int i = 0; i < 16; i++) all.add(pool.submit(() -> { start.await(); auth.touchGuest("busyguestidxxxxxxxxxxxxxx"); return null; }));
+        start.countDown();
+        for (var future : all) future.get(10, java.util.concurrent.TimeUnit.SECONDS);   // would throw on a duplicate-key error
+        pool.shutdown();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM coach_guests WHERE id = 'busyguestidxxxxxxxxxxxxxx'", Integer.class)).isEqualTo(1);
+    }
+
     @Test void idleGuestsAndOldSessionsAreFoundForClean_up() {
         auth.touchGuest("idleguestidxxxxxxxxxxxxxx");
         assertThat(auth.idleGuests(System.currentTimeMillis() + 1000)).contains("idleguestidxxxxxxxxxxxxxx");

@@ -3,6 +3,7 @@ import { AnimatePresence, LazyMotion, MotionConfig, m } from 'framer-motion'
 import { CountUp, cardIn, ease, fadeUp, spotlight, spring, stagger } from './motion.jsx'
 import { GrowthPanel, LearningPlan } from './Growth.jsx'
 import { ActivityFeed, PortfolioPanel } from './Portfolio.jsx'
+import Logo from './Logo.jsx'
 
 const API = import.meta.env.VITE_API_BASE_URL || '/api'
 const SKILLS = ['JAVA', 'SPRING_BOOT', 'REST_API', 'SQL', 'POSTGRESQL', 'REACT', 'DOCKER', 'TESTING', 'GIT']
@@ -495,8 +496,8 @@ export default function App() {
 
   if (!authChecked) return <div className="loginScreen" aria-busy="true">
     <div className="loginCard">
-      <span className="logo"><Icon name="logo" size={24} /></span>
-      <h1>ProofPath</h1>
+      <span className="logo"><Logo size={52} /></span>
+      <h1>Proof<span>Path</span></h1>
       {waking.failed
         ? <>
           <p className="loginLead">The server did not answer. It may be restarting, so please try again in a moment.</p>
@@ -510,8 +511,8 @@ export default function App() {
   </div>
   if (!auth.user && !guest) return <div className="loginScreen">
     <div className="loginCard">
-      <span className="logo"><Icon name="logo" size={24} /></span>
-      <h1>ProofPath</h1>
+      <span className="logo"><Logo size={52} /></span>
+      <h1>Proof<span>Path</span></h1>
       <p className="loginLead">Show what your code actually proves. Nothing is kept between sessions: your jobs and scan history are deleted when you sign out.</p>
       {auth.googleConfigured && <a className="googleButton big" href={`${API}/auth/google/login`}>
         <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" /><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" /><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" /><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" /></svg>
@@ -540,7 +541,7 @@ export default function App() {
   return <LazyMotion features={loadFeatures} strict><MotionConfig reducedMotion="user">
   <div className="app">
     <m.nav className="topbar" initial={{ y: -24, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: 0.5, ease }}>
-      <div className="brand"><m.span className="logo" whileHover={{ rotate: -8, scale: 1.08 }} transition={spring}><Icon name="logo" size={20} /></m.span><span>ProofPath</span><span className="tag">Kurukshetra Hackathon</span></div>
+      <div className="brand"><m.span className="logo" whileHover={{ rotate: -8, scale: 1.08 }} transition={spring}><Logo size={26} /></m.span><span className="wordmark">Proof<em>Path</em></span><span className="tag">Kurukshetra Hackathon</span></div>
       <div className="pills">
         <AnimatePresence>{watching && <m.span key="live" className="pill live" initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.8 }} transition={spring}><i className="dot" />Watching {repository}</m.span>}</AnimatePresence>
         {auth.user

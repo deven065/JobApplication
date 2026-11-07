@@ -63,11 +63,17 @@ public class AuthStore {
     /** Marks a guest as active (written at most once a minute). Guests have no account; this only drives idle clean-up. */
     public void touchGuest(String id) {
         long now = System.currentTimeMillis();
-        Long previous = guestSeen.get(id);
-        if (previous != null && now - previous < 60_000) return;
-        guestSeen.put(id, now);
-        if (jdbc.update("UPDATE coach_guests SET last_seen = ? WHERE id = ?", now, id) == 0)
-            jdbc.update("INSERT INTO coach_guests (id, last_seen) VALUES (?, ?)", id, now);
+        // A page fires several requests at once on first load. compute() runs one at a time per guest id, so only the first writes.
+        guestSeen.compute(id, (key, previous) -> {
+            if (previous != null && now - previous < 60_000) return previous;
+            writeGuest(key, now);
+            return now;
+        });
+    }
+    private void writeGuest(String id, long now) {
+        if (jdbc.update("UPDATE coach_guests SET last_seen = ? WHERE id = ?", now, id) > 0) return;
+        try { jdbc.update("INSERT INTO coach_guests (id, last_seen) VALUES (?, ?)", id, now); }
+        catch (org.springframework.dao.DuplicateKeyException raced) { jdbc.update("UPDATE coach_guests SET last_seen = ? WHERE id = ?", now, id); }  // another instance got there first
     }
     public List<String> idleGuests(long cutoffMillis) { return jdbc.queryForList("SELECT id FROM coach_guests WHERE last_seen < ?", String.class, cutoffMillis); }
     public void forgetGuest(String id) { guestSeen.remove(id); jdbc.update("DELETE FROM coach_guests WHERE id = ?", id); }
